@@ -1,0 +1,90 @@
+name: Split Positive and Negative Datasets
+description: Splits the overlaid datasets into positive and negative datasets by label corruption.
+
+inputs:
+  - {name: overlaid_train_dataset, type: Dataset}
+  - {name: overlaid_test_dataset, type: Dataset}
+
+outputs:
+  - {name: positive_train_dataset, type: Dataset}
+  - {name: negative_train_dataset, type: Dataset}
+  - {name: positive_test_dataset, type: Dataset}
+  - {name: negative_test_dataset, type: Dataset}
+
+implementation:
+  container:
+    image: python:3.8
+    command:
+      - sh
+      - -c
+      - |
+        python3 -m pip install --quiet tensorflow numpy
+        exec python3 -u - "$@"
+      - |
+        import tensorflow as tf
+        import numpy as np
+        import argparse
+        import random
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--overlaid_train_dataset', required=True)
+        parser.add_argument('--overlaid_test_dataset', required=True)
+        parser.add_argument('--positive_train_dataset', required=True)
+        parser.add_argument('--negative_train_dataset', required=True)
+        parser.add_argument('--positive_test_dataset', required=True)
+        parser.add_argument('--negative_test_dataset', required=True)
+        args = parser.parse_args()
+
+        def re_overlay(X_sample, new_label):
+            max_sample = tf.reduce_max(X_sample, axis=0, keepdims=True)
+            X_zeros = tf.zeros([10], dtype=tf.float32)
+            updates = tf.tensor_scatter_nd_update(
+                X_zeros, indices=[[new_label]], updates=tf.reshape(max_sample, [-1])
+            )
+            X_sample = tf.tensor_scatter_nd_update(X_sample, indices=[[0]], updates=updates)
+            return X_sample, new_label
+
+        def generate_negative(label):
+            choices = list(range(10))
+            choices.remove(label.numpy())
+            return random.choice(choices)
+
+        def split_dataset(ds):
+            pos_ds = []
+            neg_ds = []
+
+            for x, y in ds.unbatch():
+                pos_ds.append((x, y))
+
+                wrong_label = tf.py_function(generate_negative, [y], tf.int32)
+                x_neg, y_neg = re_overlay(x, wrong_label)
+                neg_ds.append((x_neg, y_neg))
+
+            pos_ds = tf.data.Dataset.from_tensor_slices(pos_ds).batch(60000)
+            neg_ds = tf.data.Dataset.from_tensor_slices(neg_ds).batch(60000)
+            return pos_ds, neg_ds
+
+        train_ds = tf.data.experimental.load(args.overlaid_train_dataset)
+        test_ds = tf.data.experimental.load(args.overlaid_test_dataset)
+
+        pos_train, neg_train = split_dataset(train_ds)
+        pos_test, neg_test = split_dataset(test_ds)
+
+        tf.data.experimental.save(pos_train, args.positive_train_dataset)
+        tf.data.experimental.save(neg_train, args.negative_train_dataset)
+        tf.data.experimental.save(pos_test, args.positive_test_dataset)
+        tf.data.experimental.save(neg_test, args.negative_test_dataset)
+
+    args:
+      - --overlaid_train_dataset
+      - {inputPath: overlaid_train_dataset}
+      - --overlaid_test_dataset
+      - {inputPath: overlaid_test_dataset}
+      - --positive_train_dataset
+      - {outputPath: positive_train_dataset}
+      - --negative_train_dataset
+      - {outputPath: negative_train_dataset}
+      - --positive_test_dataset
+      - {outputPath: positive_test_dataset}
+      - --negative_test_dataset
+      - {outputPath: negative_test_dataset}
