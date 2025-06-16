@@ -1,0 +1,86 @@
+name: Forward-Forward Training
+
+description: |
+  Trains a feedforward model using the Forward-Forward algorithm on positive and negative training datasets.
+
+inputs:
+  - {name: model, type: Model}
+  - {name: pos_train_data, type: Dataset}
+  - {name: neg_train_data, type: Dataset}
+
+outputs:
+  - {name: trained_model, type: Model}
+
+implementation:
+  container:
+    image: python:3.8
+    command:
+      - sh
+      - -c
+      - |
+        python3 -m pip install --quiet tensorflow
+        exec python3 -u - "$@"
+      - |
+        import tensorflow as tf
+        import numpy as np
+        import argparse
+        import os
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--model', required=True)
+        parser.add_argument('--pos_train_data', required=True)
+        parser.add_argument('--neg_train_data', required=True)
+        parser.add_argument('--trained_model', required=True)
+        args = parser.parse_args()
+
+        # Load model
+        model = tf.keras.models.load_model(args.model)
+
+        # Load positive and negative datasets
+        pos_ds = tf.data.experimental.load(args.pos_train_data)
+        neg_ds = tf.data.experimental.load(args.neg_train_data)
+
+        class ForwardForwardTrainer:
+            def __init__(self, model, threshold=1.5, optimizer=None, num_epochs=50):
+                self.model = model
+                self.threshold = threshold
+                self.optimizer = optimizer or tf.keras.optimizers.Adam()
+                self.num_epochs = num_epochs
+
+            def forward_forward_train(self, x_pos, x_neg):
+                for epoch in range(self.num_epochs):
+                    with tf.GradientTape() as tape:
+                        g_pos = tf.reduce_mean(tf.square(self.model(x_pos)), axis=1)
+                        g_neg = tf.reduce_mean(tf.square(self.model(x_neg)), axis=1)
+
+                        loss = tf.math.log(
+                            1 + tf.exp(tf.concat([-g_pos + self.threshold, g_neg - self.threshold], axis=0))
+                        )
+                        mean_loss = tf.reduce_mean(loss)
+                    gradients = tape.gradient(mean_loss, self.model.trainable_weights)
+                    self.optimizer.apply_gradients(zip(gradients, self.model.trainable_weights))
+
+        # Unbatch datasets
+        pos_samples = list(tfds for tfds in pos_ds.unbatch().as_numpy_iterator())
+        neg_samples = list(tfds for tfds in neg_ds.unbatch().as_numpy_iterator())
+
+        # Stack into arrays
+        x_pos = np.stack([x for x, _ in pos_samples]).astype(np.float32)
+        x_neg = np.stack([x for x, _ in neg_samples]).astype(np.float32)
+
+        # Train
+        trainer = ForwardForwardTrainer(model)
+        trainer.forward_forward_train(x_pos, x_neg)
+
+        # Save trained model
+        model.save(args.trained_model)
+
+    args:
+      - --model
+      - {inputPath: model}
+      - --pos_train_data
+      - {inputPath: pos_train_data}
+      - --neg_train_data
+      - {inputPath: neg_train_data}
+      - --trained_model
+      - {outputPath: trained_model}
