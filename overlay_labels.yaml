@@ -1,0 +1,64 @@
+name: Overlay Labels on Inputs
+description: Overlays max input value at label-index position in each input sample.
+
+inputs:
+  - {name: train_dataset, type: Dataset}
+  - {name: test_dataset, type: Dataset}
+
+outputs:
+  - {name: overlaid_train_dataset, type: Dataset}
+  - {name: overlaid_test_dataset, type: Dataset}
+
+implementation:
+  container:
+    image: python:3.8
+    command:
+      - sh
+      - -c
+      - |
+        python3 -m pip install --quiet tensorflow numpy
+        exec python3 -u - "$@"
+      - |
+        import tensorflow as tf
+        import numpy as np
+        import argparse
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--train_dataset', required=True)
+        parser.add_argument('--test_dataset', required=True)
+        parser.add_argument('--overlaid_train_dataset', required=True)
+        parser.add_argument('--overlaid_test_dataset', required=True)
+        args = parser.parse_args()
+
+        def overlay_y_on_x(X_sample, y_sample):
+            max_sample = tf.reduce_max(X_sample, axis=0, keepdims=True)
+            X_zeros = tf.zeros([10], dtype=tf.float32)
+            updates = tf.tensor_scatter_nd_update(
+                X_zeros, indices=[[y_sample]], updates=tf.reshape(max_sample, [-1])
+            )
+            X_sample = tf.tensor_scatter_nd_update(X_sample, indices=[[0]], updates=updates)
+            return X_sample, y_sample
+
+        def apply_overlay(dataset):
+            dataset = dataset.unbatch()
+            dataset = dataset.map(overlay_y_on_x)
+            return dataset.batch(60000)  # Maintain same batch size as before
+
+        train_ds = tf.data.experimental.load(args.train_dataset)
+        test_ds = tf.data.experimental.load(args.test_dataset)
+
+        overlaid_train_ds = apply_overlay(train_ds)
+        overlaid_test_ds = apply_overlay(test_ds)
+
+        tf.data.experimental.save(overlaid_train_ds, args.overlaid_train_dataset)
+        tf.data.experimental.save(overlaid_test_ds, args.overlaid_test_dataset)
+
+    args:
+      - --train_dataset
+      - {inputPath: train_dataset}
+      - --test_dataset
+      - {inputPath: test_dataset}
+      - --overlaid_train_dataset
+      - {outputPath: overlaid_train_dataset}
+      - --overlaid_test_dataset
+      - {outputPath: overlaid_test_dataset}
