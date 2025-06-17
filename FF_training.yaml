@@ -1,18 +1,28 @@
 name: Forward-Forward Training
-description: Trains a feedforward model using the Forward-Forward algorithm on positive and negative training datasets.
+
+description: |
+  Trains a feedforward model using the Forward-Forward algorithm on positive and negative training datasets.
 
 inputs:
-  - {name: model, type: Model}
-  - {name: pos_train_data, type: Dataset}
-  - {name: neg_train_data, type: Dataset}
-  - {name: num_epochs, type: Integer, default: 50}
-  - {name: threshold, type: Float, default: 1.5}
-  - {name: learning_rate, type: Float, default: 0.001}
-
+  - name: model
+    type: Model
+  - name: pos_train_data
+    type: Dataset
+  - name: neg_train_data
+    type: Dataset
+  - name: num_epochs
+    type: Integer
+    default: 50
+  - name: threshold
+    type: Float
+    default: 1.5
+  - name: learning_rate
+    type: Float
+    default: 0.001
 
 outputs:
-  - {name: trained_model, type: Model}
-
+  - name: trained_model
+    type: Model
 
 implementation:
   container:
@@ -86,8 +96,6 @@ implementation:
 
         # Save trained model
         model.save(args.trained_model)
-
-       #print(f"\n Trained model saved to {args.trained_model}")
 
     args:
       - --model
