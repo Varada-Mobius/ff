@@ -2,6 +2,20 @@ name: Overlay and Split Datasets
 description: Overlays labels on inputs and splits into positive/negative datasets with user-defined batch size.
 
 inputs:
+<<<<<<< HEAD
+=======
+  - {name: x_train, type: Dataset}
+  - {name: y_train, type: Dataset}
+  - {name: x_test, type: Dataset}
+  - {name: y_test, type: Dataset}
+  - {name: batch_size, type: string}   
+
+outputs:
+  - {name: x_train, type: Dataset}
+  - {name: x_test, type: Dataset}
+  - {name: y_train, type: Dataset}
+  - {name: y_test, type: Dataset}
+>>>>>>> 60d32831c78040da7a039a772a4f55c08bbd1be5
   - {name: train_dataset, type: Dataset}
   - {name: test_dataset, type: Dataset}
 
