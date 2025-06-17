@@ -1,6 +1,5 @@
 name: Forward-Forward Training
-description: |
-  Trains a feedforward model using the Forward-Forward algorithm on positive and negative training datasets.
+description: Trains a feedforward model using the Forward-Forward algorithm on positive and negative training datasets.
 
 inputs:
   - {name: model, type: Model}
