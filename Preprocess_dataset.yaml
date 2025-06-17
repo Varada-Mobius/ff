@@ -1,0 +1,135 @@
+name: Preprocess Generic Dataset
+description: Converts JSON data into normalized, flattened train/test datasets
+
+inputs:
+  - {name: json_data, type: Dataset}
+
+outputs:
+  - {name: x_train, type: Dataset}
+  - {name: x_test, type: Dataset}
+  - {name: y_train, type: Dataset}
+  - {name: y_test, type: Dataset}
+  - {name: train_dataset, type: Dataset}
+  - {name: test_dataset, type: Dataset}
+
+implementation:
+  container:
+    image: python:3.8
+    command:
+      - sh
+      - -c
+      - |
+        python3 -m pip install --quiet numpy tensorflow scikit-learn
+        exec python3 -u - "$@"
+      - |
+        import json
+        import numpy as np
+        import tensorflow as tf
+        import argparse
+        import base64
+        from sklearn.model_selection import train_test_split
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--json_data', required=True)
+        parser.add_argument('--x_train_out', required=True)
+        parser.add_argument('--x_test_out', required=True)
+        parser.add_argument('--y_train_out', required=True)
+        parser.add_argument('--y_test_out', required=True)
+        parser.add_argument('--train_dataset', required=True)
+        parser.add_argument('--test_dataset', required=True)
+        args = parser.parse_args()
+
+        # Load JSON
+        with open(args.json_data, "r") as f:
+            data = json.load(f)
+
+        # Unify format
+        if isinstance(data, dict):
+            if "data" in data:
+                records = data["data"]
+            elif "rows" in data:
+                records = data["rows"]
+            else:
+                records = [data]
+        elif isinstance(data, list):
+            records = data
+        else:
+            raise ValueError("Unknown data format!")
+
+        # Extract x, y from records
+        x = []
+        y = []
+
+        for rec in records:
+            row = rec.get("row", rec)
+
+            # Detect image
+            image_data = None
+            if "image" in row:
+                if "bytes" in row["image"]:
+                    image_bytes = row["image"]["bytes"]
+                    image_array = np.frombuffer(base64.b64decode(image_bytes), dtype=np.uint8)
+                    side = int(np.sqrt(len(image_array)))
+                    image_array = image_array.reshape((side, side))
+                    image_data = image_array
+                elif "array" in row["image"]:
+                    image_data = np.array(row["image"]["array"])
+
+            # If no image field, try generic features
+            if image_data is None:
+                image_data = []
+                for k, v in row.items():
+                    if k != "label":
+                        image_data.append(v)
+                image_data = np.array(image_data)
+
+            # Detect label
+            label = row.get("label") or row.get("target") or row.get("y") or 0
+
+            x.append(image_data)
+            y.append(label)
+
+        x = np.array(x, dtype=np.float32)
+        y = np.array(y, dtype=np.int32)
+
+        # Normalize
+        if x.max() > 1.0:
+            x /= 255.0
+
+        # Flatten if needed
+        if x.ndim > 2:
+            x = x.reshape((x.shape[0], -1))
+
+        # Split into train/test
+        x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42)
+
+        # Save npy
+        np.save(args.x_train_out, x_train)
+        np.save(args.x_test_out, x_test)
+        np.save(args.y_train_out, y_train)
+        np.save(args.y_test_out, y_test)
+
+        # Create batched TF datasets
+        train_ds = tf.data.Dataset.from_tensor_slices((x_train, y_train)).batch(len(x_train))
+        test_ds = tf.data.Dataset.from_tensor_slices((x_test, y_test)).batch(len(x_test))
+
+        tf.data.experimental.save(train_ds, args.train_dataset)
+        tf.data.experimental.save(test_ds, args.test_dataset)
+
+        print(f"Processed {len(x_train)} train and {len(x_test)} test samples.")
+
+    args:
+      - --json_data
+      - {inputPath: json_data}
+      - --x_train_out
+      - {outputPath: x_train}
+      - --x_test_out
+      - {outputPath: x_test}
+      - --y_train_out
+      - {outputPath: y_train}
+      - --y_test_out
+      - {outputPath: y_test}
+      - --train_dataset
+      - {outputPath: train_dataset}
+      - --test_dataset
+      - {outputPath: test_dataset}
