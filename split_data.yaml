@@ -4,6 +4,7 @@ description: Overlays labels and splits the datasets into positive and negative 
 inputs:
   - {name: overlaid_train_dataset, type: Dataset}
   - {name: overlaid_test_dataset, type: Dataset}
+  - {name: batch_size, type: Integer}
 
 outputs:
   - {name: positive_train_dataset, type: Dataset}
@@ -11,10 +12,7 @@ outputs:
   - {name: positive_test_dataset, type: Dataset}
   - {name: negative_test_dataset, type: Dataset}
 
-properties:
-  batch_size:
-    type: integer
-    default: 60000
+
 
 implementation:
   container:
@@ -38,8 +36,10 @@ implementation:
         parser.add_argument('--negative_train_dataset', required=True)
         parser.add_argument('--positive_test_dataset', required=True)
         parser.add_argument('--negative_test_dataset', required=True)
-        parser.add_argument('--batch_size', type=int, default=60000)
+        parser.add_argument('--batch_size', type=int, required=False, default=60000)
         args = parser.parse_args()
+
+        batch_size = args.batch_size
 
         def re_overlay(X_sample, new_label):
             max_sample = tf.reduce_max(X_sample, axis=0, keepdims=True)
@@ -86,6 +86,8 @@ implementation:
       - {inputPath: overlaid_train_dataset}
       - --overlaid_test_dataset
       - {inputPath: overlaid_test_dataset}
+      - --batch_size
+      - {inputValue: batch_size}
       - --positive_train_dataset
       - {outputPath: positive_train_dataset}
       - --negative_train_dataset
@@ -94,5 +96,4 @@ implementation:
       - {outputPath: positive_test_dataset}
       - --negative_test_dataset
       - {outputPath: negative_test_dataset}
-      - --batch_size
-      - {inputValue: batch_size}
+      
