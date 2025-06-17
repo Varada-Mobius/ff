@@ -1,7 +1,13 @@
 name: Build Feedforward Model
 description: Builds a configurable feedforward model (Sequential) and outputs the Keras model.
 
-inputs: []
+inputs:
+  - {name: input_dim, type: Integer, default: 784, description: 'Input dimension (e.g., 784 for MNIST)'}
+  - {name: output_dim, type: Integer, default: 10, description: 'Number of output classes'}
+  - {name: layer_spec, type: String, 
+     default: '[{"type":"Dense", "units":128, "activation":"relu"}, {"type":"Dropout", "rate":0.3}, {"type":"Dense", "units":64, "activation":"relu"}]',
+     description: 'JSON list of layers: [{"type":"Dense", "units":128, "activation":"relu"}, {"type":"Dropout", "rate":0.2}]'}
+  - {name: output_activation, type: String, default: 'softmax', description: 'Activation for output layer'}
 
 outputs:
   - {name: model_output, type: Model}
@@ -23,12 +29,12 @@ implementation:
         parser = argparse.ArgumentParser()
         parser.add_argument('--input_dim', type=int, required=True)
         parser.add_argument('--output_dim', type=int, required=True)
-        parser.add_argument('--layer_spec', type=str, required=True, 
-                            help='JSON list: [{"type":"Dense", "units":128, "activation":"relu"}, {"type":"Dropout", "rate":0.2}]')
+        parser.add_argument('--layer_spec', type=str, required=True)
         parser.add_argument('--output_activation', type=str, required=False, default='softmax')
         parser.add_argument('--model_output', required=True)
         args = parser.parse_args()
 
+        # Parse layer config
         layer_spec = json.loads(args.layer_spec)
 
         model = tf.keras.Sequential()
@@ -52,13 +58,12 @@ implementation:
 
     args:
       - --input_dim
-      - {value: 784}  # example default for MNIST flattened
+      - {inputValue: input_dim}
       - --output_dim
-      - {value: 10}   # example default for 10 classes
+      - {inputValue: output_dim}
       - --layer_spec
-      - {value: '[{"type":"Dense", "units":128, "activation":"relu"}, {"type":"Dropout", "rate":0.3}, {"type":"Dense", "units":64, "activation":"relu"}]'}
+      - {inputValue: layer_spec}
       - --output_activation
-      - {value: 'softmax'}
+      - {inputValue: output_activation}
       - --model_output
       - {outputPath: model_output}
-
