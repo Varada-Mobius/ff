@@ -2,12 +2,11 @@ name: Build Feedforward Model
 description: Builds a configurable feedforward model (Sequential) and outputs the Keras model.
 
 inputs:
-  - {name: input_dim, type: Integer, default: 784, description: 'Input dimension (e.g., 784 for MNIST)'}
-  - {name: output_dim, type: Integer, default: 10, description: 'Number of output classes'}
+  - {name: input_dim, type: Integer}
+  - {name: output_dim, type: Integer}
   - {name: layer_spec, type: String, 
-     default: '[{"type":"Dense", "units":128, "activation":"relu"}, {"type":"Dropout", "rate":0.3}, {"type":"Dense", "units":64, "activation":"relu"}]',
-     description: 'JSON list of layers: [{"type":"Dense", "units":128, "activation":"relu"}, {"type":"Dropout", "rate":0.2}]'}
-  - {name: output_activation, type: String, default: 'softmax', description: 'Activation for output layer'}
+     default: '[{"type":"Dense", "units":128, "activation":"relu"}, {"type":"Dropout", "rate":0.3}, {"type":"Dense", "units":64, "activation":"relu"}]',}
+  - {name: output_activation, type: String, default: 'softmax'}
 
 outputs:
   - {name: model_output, type: Model}
