@@ -6,7 +6,7 @@ inputs:
   - {name: y_train, type: Dataset}
   - {name: x_test, type: Dataset}
   - {name: y_test, type: Dataset}
-  - {name: batch_size, type: string}   # You can pass '60000' or any value in Elyra node UI
+  - {name: batch_size, type: string}   
 
 outputs:
   - {name: x_train, type: Dataset}
