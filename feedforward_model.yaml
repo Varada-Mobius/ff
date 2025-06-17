@@ -1,8 +1,10 @@
-name: Create Feedforward Model
-description: Constructs a Keras feedforward model with hardcoded input/output sizes and saves it.
+name: Build Feedforward Model
+description: Builds a configurable feedforward model (Sequential) and outputs the Keras model.
+
+inputs: []
 
 outputs:
-  - {name: model, type: Model}
+  - {name: model_output, type: Model}
 
 implementation:
   container:
@@ -15,23 +17,48 @@ implementation:
         exec python3 -u - "$@"
       - |
         import tensorflow as tf
+        import json
         import argparse
-        import os
 
         parser = argparse.ArgumentParser()
-        parser.add_argument('--model', required=True)
+        parser.add_argument('--input_dim', type=int, required=True)
+        parser.add_argument('--output_dim', type=int, required=True)
+        parser.add_argument('--layer_spec', type=str, required=True, 
+                            help='JSON list: [{"type":"Dense", "units":128, "activation":"relu"}, {"type":"Dropout", "rate":0.2}]')
+        parser.add_argument('--output_activation', type=str, required=False, default='softmax')
+        parser.add_argument('--model_output', required=True)
         args = parser.parse_args()
 
-        # Example: MNIST shape (784,) input and 10-class output
-        model = tf.keras.Sequential([
-            tf.keras.layers.Input(shape=(784,)),
-            tf.keras.layers.Dense(256, activation='relu'),
-            tf.keras.layers.Dense(128, activation='relu'),
-            tf.keras.layers.Dense(10)  # logits, no softmax for FF
-        ])
+        layer_spec = json.loads(args.layer_spec)
 
-        model.save(args.model)
+        model = tf.keras.Sequential()
+        model.add(tf.keras.layers.Input(shape=(args.input_dim,)))
+
+        for idx, layer_conf in enumerate(layer_spec):
+            if layer_conf["type"] == "Dense":
+                model.add(tf.keras.layers.Dense(units=layer_conf["units"], activation=layer_conf["activation"]))
+            elif layer_conf["type"] == "Dropout":
+                model.add(tf.keras.layers.Dropout(rate=layer_conf["rate"]))
+            else:
+                raise ValueError(f"Unsupported layer type: {layer_conf['type']} at index {idx}")
+
+        model.add(tf.keras.layers.Dense(units=args.output_dim, activation=args.output_activation))
+
+        model.summary()
+
+        model.save(args.model_output)
+
+        #print(f"\n Feedforward model built with {len(layer_spec)} hidden layers. Saved to {args.model_output}")
 
     args:
-      - --model
-      - {outputPath: model}
+      - --input_dim
+      - {value: 784}  # example default for MNIST flattened
+      - --output_dim
+      - {value: 10}   # example default for 10 classes
+      - --layer_spec
+      - {value: '[{"type":"Dense", "units":128, "activation":"relu"}, {"type":"Dropout", "rate":0.3}, {"type":"Dense", "units":64, "activation":"relu"}]'}
+      - --output_activation
+      - {value: 'softmax'}
+      - --model_output
+      - {outputPath: model_output}
+
