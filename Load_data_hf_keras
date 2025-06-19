@@ -1,0 +1,177 @@
+name: Dataset to Unified JSON Converter
+description: Converts Hugging Face or Keras datasets to a unified JSON format, with optional sample limiting.
+
+inputs:
+  - {name: source, type: string} # "huggingface" or "keras"
+  - {name: dataset_name, type: string}
+  - {name: subset, type: string} # for huggingface (can be empty string)
+  - {name: split, type: string}  # for huggingface (train/test/validation, can default to train)
+  - {name: max_samples, type: integer} # max samples per split (0 for unlimited)
+
+outputs:
+  - {name: unified_json, type: string}
+
+implementation:
+  container:
+    image: python:3.10
+    command:
+      - sh
+      - -c
+      - |
+        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet datasets tensorflow pandas numpy || \
+        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet datasets tensorflow pandas numpy --user
+        exec "$0" "$@"
+      - python3
+      - -u
+      - -c
+      - |
+        import json
+        import numpy as np
+        import pandas as pd
+        import argparse
+        import os
+
+        def load_huggingface_dataset(dataset_name, subset, split):
+            from datasets import load_dataset
+            if subset:
+                return load_dataset(dataset_name, subset, split=split)
+            else:
+                return load_dataset(dataset_name, split=split)
+
+        def load_keras_dataset(dataset_name):
+            import tensorflow as tf
+            keras_datasets = {
+                'mnist': tf.keras.datasets.mnist,
+                'fashion_mnist': tf.keras.datasets.fashion_mnist,
+                'cifar10': tf.keras.datasets.cifar10,
+                'cifar100': tf.keras.datasets.cifar100,
+                'imdb': tf.keras.datasets.imdb,
+                'reuters': tf.keras.datasets.reuters,
+                'boston_housing': tf.keras.datasets.boston_housing
+            }
+            dataset = keras_datasets[dataset_name.lower()]
+            return dataset.load_data()
+
+        def convert_numpy_to_serializable(obj):
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, dict):
+                return {k: convert_numpy_to_serializable(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_numpy_to_serializable(i) for i in obj]
+            else:
+                return obj
+
+        def create_unified_json_format(data, source_type, dataset_name, split_info=None):
+            unified_format = {
+                'dataset_info': {
+                    'name': dataset_name,
+                    'source': source_type,
+                    'format_version': '1.0'
+                },
+                'splits': {},
+                'metadata': {}
+            }
+
+            if source_type == 'huggingface':
+                df = data.to_pandas()
+                columns = df.columns.tolist()
+                records = df.to_dict('records')
+                records = convert_numpy_to_serializable(records)
+                split_name = split_info.get('split', 'train') if split_info else 'train'
+
+                unified_format['splits'][split_name] = {
+                    'samples': records,
+                    'count': len(records)
+                }
+
+                unified_format['metadata'] = {
+                    'total_samples': len(records),
+                    'columns': columns,
+                    'sample_fields': list(records[0].keys()) if records else [],
+                    'splits_available': [split_name]
+                }
+
+            elif source_type == 'keras':
+                (x_train, y_train), (x_test, y_test) = data
+                train_records = [
+                    {'features': convert_numpy_to_serializable(x_train[i]), 'label': int(y_train[i]), 'index': i}
+                    for i in range(len(x_train))
+                ]
+                test_records = [
+                    {'features': convert_numpy_to_serializable(x_test[i]), 'label': int(y_test[i]), 'index': i}
+                    for i in range(len(x_test))
+                ]
+
+                unified_format['splits']['train'] = {'samples': train_records, 'count': len(train_records)}
+                unified_format['splits']['test'] = {'samples': test_records, 'count': len(test_records)}
+
+                unified_format['metadata'] = {
+                    'total_samples': len(train_records) + len(test_records),
+                    'train_samples': len(train_records),
+                    'test_samples': len(test_records),
+                    'feature_shape': list(x_train.shape[1:]),
+                    'num_classes': len(np.unique(y_train)),
+                    'sample_fields': ['features', 'label', 'index'],
+                    'splits_available': ['train', 'test']
+                }
+
+            return unified_format
+
+        def save_unified_json(unified_data, output_file, max_samples_per_split):
+            if max_samples_per_split and max_samples_per_split > 0:
+                for split_name in unified_data['splits']:
+                    split_data = unified_data['splits'][split_name]
+                    if split_data['count'] > max_samples_per_split:
+                        split_data['samples'] = split_data['samples'][:max_samples_per_split]
+                        split_data['count'] = len(split_data['samples'])
+
+                total_samples = sum(split['count'] for split in unified_data['splits'].values())
+                unified_data['metadata']['total_samples'] = total_samples
+                if 'train_samples' in unified_data['metadata']:
+                    unified_data['metadata']['train_samples'] = unified_data['splits']['train']['count']
+                if 'test_samples' in unified_data['metadata']:
+                    unified_data['metadata']['test_samples'] = unified_data['splits']['test']['count']
+
+            os.makedirs(os.path.dirname(output_file), exist_ok=True)
+            with open(output_file, 'w', encoding='utf-8') as f:
+                json.dump(unified_data, f, indent=2, ensure_ascii=False)
+
+            print(f"Saved {unified_data['metadata']['total_samples']} samples to {output_file}")
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--source", type=str, required=True)
+        parser.add_argument("--dataset_name", type=str, required=True)
+        parser.add_argument("--subset", type=str, required=False, default="")
+        parser.add_argument("--split", type=str, required=False, default="train")
+        parser.add_argument("--max_samples", type=int, required=False, default=0)
+        parser.add_argument("--unified_json", type=str, required=True)
+        args = parser.parse_args()
+
+        if args.source.lower() == "huggingface":
+            dataset = load_huggingface_dataset(args.dataset_name, args.subset, args.split)
+            unified_data = create_unified_json_format(dataset, 'huggingface', args.dataset_name, {'split': args.split})
+        elif args.source.lower() == "keras":
+            data = load_keras_dataset(args.dataset_name)
+            unified_data = create_unified_json_format(data, 'keras', args.dataset_name)
+        else:
+            raise ValueError(f"Unsupported source: {args.source}")
+
+        save_unified_json(unified_data, args.unified_json, args.max_samples)
+    args:
+      - --source
+      - {inputValue: source}
+      - --dataset_name
+      - {inputValue: dataset_name}
+      - --subset
+      - {inputValue: subset}
+      - --split
+      - {inputValue: split}
+      - --max_samples
+      - {inputValue: max_samples}
+      - --unified_json
+      - {outputPath: unified_json}
