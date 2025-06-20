@@ -1,0 +1,115 @@
+name: SplitData_Overlay
+description: Split overlaid dataset into positive and negative datasets by label corruption and overlay.
+
+inputs:
+  - {name: overlaid_train_dataset, type: Dataset}
+  - {name: overlaid_test_dataset, type: Dataset}
+  - {name: batch_size, type: Integer}
+
+outputs:
+  - {name: positive_train_dataset, type: Dataset}
+  - {name: negative_train_dataset, type: Dataset}
+  - {name: positive_test_dataset, type: Dataset}
+  - {name: negative_test_dataset, type: Dataset}
+
+implementation:
+  container:
+    image: python:3.8
+    command:
+      - sh
+      - -c
+      - |
+        python3 -m pip install --quiet tensorflow numpy
+        exec python3 -u - "$@"
+      - |
+        import tensorflow as tf
+        import numpy as np
+        import argparse
+        import random
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--overlaid_train_dataset', required=True)
+        parser.add_argument('--overlaid_test_dataset', required=True)
+        parser.add_argument('--positive_train_dataset', required=True)
+        parser.add_argument('--negative_train_dataset', required=True)
+        parser.add_argument('--positive_test_dataset', required=True)
+        parser.add_argument('--negative_test_dataset', required=True)
+        parser.add_argument('--batch_size', type=int, required=False, default=60000)
+        args = parser.parse_args()
+
+        batch_size = args.batch_size
+
+        def re_overlay(X_sample, new_label):
+            max_val = tf.reduce_max(X_sample)  # scalar
+
+            overlay = tf.zeros([10], dtype=tf.float32)
+            overlay = tf.tensor_scatter_nd_update(
+                overlay,
+                indices=[[new_label]],
+                updates=[max_val]
+            )
+
+            X_new = tf.concat([overlay, X_sample[10:]], axis=0)
+            new_label = tf.cast(new_label, tf.int32)
+            return X_new, new_label
+
+        def generate_negative(label):
+            choices = list(range(10))
+            choices.remove(label.numpy())
+            return random.choice(choices)
+
+        def split_dataset(ds, batch_size):
+            pos_images = []
+            pos_labels = []
+            neg_images = []
+            neg_labels = []
+
+            for x, y in ds.unbatch():
+                pos_images.append(x)
+                pos_labels.append(y)
+
+                wrong_label = tf.py_function(generate_negative, [y], tf.int32)
+                x_neg, y_neg = re_overlay(x, wrong_label)
+
+                neg_images.append(x_neg)
+                neg_labels.append(y_neg)
+
+            pos_ds = tf.data.Dataset.from_tensor_slices((tf.stack(pos_images), tf.stack(pos_labels))).batch(batch_size)
+            neg_ds = tf.data.Dataset.from_tensor_slices((tf.stack(neg_images), tf.stack(neg_labels))).batch(batch_size)
+            return pos_ds, neg_ds
+
+        # --- Load datasets ---
+        train_ds = tf.data.experimental.load(args.overlaid_train_dataset)
+        test_ds = tf.data.experimental.load(args.overlaid_test_dataset)
+
+        # --- Split datasets ---
+        pos_train, neg_train = split_dataset(train_ds, batch_size)
+        pos_test, neg_test = split_dataset(test_ds, batch_size)
+
+        # --- Save datasets ---
+        tf.data.experimental.save(pos_train, args.positive_train_dataset)
+        tf.data.experimental.save(neg_train, args.negative_train_dataset)
+        tf.data.experimental.save(pos_test, args.positive_test_dataset)
+        tf.data.experimental.save(neg_test, args.negative_test_dataset)
+
+        print("Done! Saved:")
+        print(f"  Positive Train → {args.positive_train_dataset}")
+        print(f"  Negative Train → {args.negative_train_dataset}")
+        print(f"  Positive Test  → {args.positive_test_dataset}")
+        print(f"  Negative Test  → {args.negative_test_dataset}")
+
+    args:
+      - --overlaid_train_dataset
+      - {inputPath: overlaid_train_dataset}
+      - --overlaid_test_dataset
+      - {inputPath: overlaid_test_dataset}
+      - --batch_size
+      - {inputValue: batch_size}
+      - --positive_train_dataset
+      - {outputPath: positive_train_dataset}
+      - --negative_train_dataset
+      - {outputPath: negative_train_dataset}
+      - --positive_test_dataset
+      - {outputPath: positive_test_dataset}
+      - --negative_test_dataset
+      - {outputPath: negative_test_dataset}
