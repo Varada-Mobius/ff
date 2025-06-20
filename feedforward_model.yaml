@@ -1,4 +1,4 @@
-name: Build Feedforward Model
+name: Build New Feedforward Model
 description: Builds a configurable feedforward model (Sequential) and outputs the Keras model.
 
 inputs:
@@ -51,7 +51,7 @@ implementation:
 
         model.summary()
 
-        model.save(args.model_output)
+        model.export(args.model_output)
 
         #print(f"\n Feedforward model built with {len(layer_spec)} hidden layers. Saved to {args.model_output}")
 
