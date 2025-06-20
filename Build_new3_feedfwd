@@ -1,0 +1,65 @@
+name: Build New Feedforward Model
+description: Builds a configurable feedforward model (Sequential) and outputs the Keras model.
+
+inputs:
+  - {name: input_dim, type: Integer}
+  - {name: output_dim, type: Integer}
+  - {name: layer_spec, type: String}
+  - {name: output_activation, type: String}
+
+outputs:
+  - {name: model_output, type: Model}
+
+implementation:
+  container:
+    image: python:3.8
+    command:
+      - sh
+      - -c
+      - |
+        python3 -m pip install --quiet tensorflow
+        python3 - <<EOF
+        import tensorflow as tf
+        import json
+        import argparse
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--input_dim', type=int, required=True)
+        parser.add_argument('--output_dim', type=int, required=True)
+        parser.add_argument('--layer_spec', type=str, required=True)
+        parser.add_argument('--output_activation', type=str, required=False, default='softmax')
+        parser.add_argument('--model_output', required=True)
+        args = parser.parse_args()
+
+        # Parse layer config
+        layer_spec = json.loads(args.layer_spec)
+
+        model = tf.keras.Sequential()
+        model.add(tf.keras.layers.Input(shape=(args.input_dim,)))
+
+        for idx, layer_conf in enumerate(layer_spec):
+            if layer_conf["type"] == "Dense":
+                model.add(tf.keras.layers.Dense(units=layer_conf["units"], activation=layer_conf["activation"]))
+            elif layer_conf["type"] == "Dropout":
+                model.add(tf.keras.layers.Dropout(rate=layer_conf["rate"]))
+            else:
+                raise ValueError(f"Unsupported layer type: {layer_conf['type']} at index {idx}")
+
+        model.add(tf.keras.layers.Dense(units=args.output_dim, activation=args.output_activation))
+
+        model.summary()
+        model.save(args.model_output)
+
+        print(f"\n Feedforward model built with {len(layer_spec)} hidden layers. Saved to {args.model_output}")
+        EOF
+    args:
+      - --input_dim
+      - {inputValue: input_dim}
+      - --output_dim
+      - {inputValue: output_dim}
+      - --layer_spec
+      - {inputValue: layer_spec}
+      - --output_activation
+      - {inputValue: output_activation}
+      - --model_output feedforward_model.keras
+      - {outputPath: model_output}
