@@ -1,0 +1,126 @@
+name: Inference Forward-Forward
+description: Runs inference using a trained Forward-Forward model on positive and negative test datasets (TFDS), prints & plots results, outputs predictions and metrics.
+
+inputs:
+  - {name: trained_model, type: Model}
+  - {name: pos_test_ds, type: Dataset}
+  - {name: neg_test_ds, type: Dataset}
+
+outputs:
+  - {name: predictions_pos, type: Dataset}
+  - {name: predictions_neg, type: Dataset}
+  - {name: inference_metrics, type: Dataset}
+
+implementation:
+  container:
+    image: python:3.8
+    command:
+      - sh
+      - -c
+      - |
+        python3 -m pip install --quiet tensorflow scikit-learn numpy matplotlib
+        exec python3 -u - "$@"
+      - |
+        import tensorflow as tf
+        import numpy as np
+        import argparse
+        import json
+        import matplotlib.pyplot as plt
+        from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--trained_model', required=True)
+        parser.add_argument('--pos_test_ds', required=True)
+        parser.add_argument('--neg_test_ds', required=True)
+        parser.add_argument('--predictions_pos', required=True)
+        parser.add_argument('--predictions_neg', required=True)
+        parser.add_argument('--inference_metrics', required=True)
+        args = parser.parse_args()
+
+        # Load model
+        model = tf.keras.models.load_model(args.trained_model)
+
+        # Load test datasets (TF datasets)
+        pos_test_ds = tf.data.experimental.load(args.pos_test_ds)
+        neg_test_ds = tf.data.experimental.load(args.neg_test_ds)
+
+        # Unbatch and get numpy arrays
+        pos_images = []
+        for x_batch, _ in pos_test_ds.unbatch():
+            pos_images.append(x_batch.numpy())
+        pos_images = np.stack(pos_images)
+
+        neg_images = []
+        for x_batch, _ in neg_test_ds.unbatch():
+            neg_images.append(x_batch.numpy())
+        neg_images = np.stack(neg_images)
+
+        # Run predictions
+        preds_pos = model.predict(pos_images, batch_size=128).flatten()
+        preds_neg = model.predict(neg_images, batch_size=128).flatten()
+
+        # Save raw predictions
+        np.save(args.predictions_pos, preds_pos)
+        np.save(args.predictions_neg, preds_neg)
+
+        # Define threshold
+        threshold = 0.5  # you can tune this
+
+        # Compute predicted labels
+        y_pred_pos = (preds_pos > threshold).astype(int)
+        y_pred_neg = (preds_neg > threshold).astype(int)
+
+        # Create true labels
+        y_true = np.concatenate([np.ones(len(preds_pos)), np.zeros(len(preds_neg))])
+        y_pred = np.concatenate([y_pred_pos, y_pred_neg])
+
+        # Compute metrics
+        acc = accuracy_score(y_true, y_pred)
+        f1 = f1_score(y_true, y_pred)
+        auc = roc_auc_score(y_true, np.concatenate([preds_pos, preds_neg]))
+
+        metrics = {
+            "accuracy": acc,
+            "f1_score": f1,
+            "auc": auc,
+            "num_pos": len(preds_pos),
+            "num_neg": len(preds_neg),
+            "threshold": threshold
+        }
+
+        with open(args.inference_metrics, "w") as f:
+            json.dump(metrics, f, indent=2)
+
+        print(f"\n=== Inference Metrics ===")
+        print(f"Accuracy: {acc:.4f}")
+        print(f"F1 Score: {f1:.4f}")
+        print(f"AUC: {auc:.4f}")
+        print("=========================\n")
+
+        # Plot histograms
+        plt.figure(figsize=(8,6))
+        plt.hist(preds_pos, bins=50, alpha=0.7, label='Positive samples')
+        plt.hist(preds_neg, bins=50, alpha=0.7, label='Negative samples')
+        plt.axvline(threshold, color='red', linestyle='--', label=f'Threshold = {threshold}')
+        plt.xlabel("Model output (goodness or similarity)")
+        plt.ylabel("Frequency")
+        plt.title("Inference Distribution - FF Model")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig("inference_distribution.png")
+        print("Saved plot: inference_distribution.png")
+
+    args:
+      - --trained_model
+      - {inputPath: trained_model}
+      - --pos_test_ds
+      - {inputPath: pos_test_ds}
+      - --neg_test_ds
+      - {inputPath: neg_test_ds}
+      - --predictions_pos
+      - {outputPath: predictions_pos}
+      - --predictions_neg
+      - {outputPath: predictions_neg}
+      - --inference_metrics
+      - {outputPath: inference_metrics}
