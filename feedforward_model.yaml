@@ -9,7 +9,7 @@ inputs:
   - {name: output_activation, type: String, default: 'softmax'}
 
 outputs:
-  - {name: model_output, type: Model}
+  - {name: model_output, type: Model, default: 'feedforward_model.keras'}
 
 implementation:
   container:
@@ -51,7 +51,7 @@ implementation:
 
         model.summary()
 
-        model.export(args.model_output)
+        model.save(args.model_output)
 
         #print(f"\n Feedforward model built with {len(layer_spec)} hidden layers. Saved to {args.model_output}")
 
