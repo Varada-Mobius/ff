@@ -4,12 +4,11 @@ description: Builds a configurable feedforward model (Sequential) and outputs th
 inputs:
   - {name: input_dim, type: Integer}
   - {name: output_dim, type: Integer}
-  - {name: layer_spec, type: String, 
-     default: '[{"type":"Dense", "units":128, "activation":"relu"}, {"type":"Dropout", "rate":0.3}, {"type":"Dense", "units":64, "activation":"relu"}]',}
-  - {name: output_activation, type: String, default: 'softmax'}
+  - {name: layer_spec, type: String}
+  - {name: output_activation, type: String}
 
 outputs:
-  - {name: model_output, type: Model, default: 'feedforward_model.keras'}
+  - {name: model_output, type: Model}
 
 implementation:
   container:
@@ -64,5 +63,5 @@ implementation:
       - {inputValue: layer_spec}
       - --output_activation
       - {inputValue: output_activation}
-      - --model_output
+      - --model_output feedforward_model.keras
       - {outputPath: model_output}
