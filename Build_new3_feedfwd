@@ -18,8 +18,7 @@ implementation:
       - -c
       - |
         python3 -m pip install --quiet tensorflow
-        exec python3 -u - "$@"
-      - |
+        python3 - <<EOF
         import tensorflow as tf
         import json
         import argparse
@@ -49,11 +48,10 @@ implementation:
         model.add(tf.keras.layers.Dense(units=args.output_dim, activation=args.output_activation))
 
         model.summary()
-
         model.save(args.model_output)
 
-        #print(f"\n Feedforward model built with {len(layer_spec)} hidden layers. Saved to {args.model_output}")
-
+        print(f"\n Feedforward model built with {len(layer_spec)} hidden layers. Saved to {args.model_output}")
+        EOF
     args:
       - --input_dim
       - {inputValue: input_dim}

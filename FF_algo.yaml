@@ -1,6 +1,6 @@
 name: Forward-Forward Training
 
-description: Trains a feedforward model using the Forward-Forward algorithm on positive and negative training datasets.
+description: Trains a feedforward model one layer at a time using the Forward-Forward algorithm on positive and negative training datasets.
 
 inputs:
   - {name: model, type: Model}
@@ -44,29 +44,6 @@ implementation:
         pos_ds = tf.data.experimental.load(args.pos_train_data)
         neg_ds = tf.data.experimental.load(args.neg_train_data)
 
-        class ForwardForwardTrainer:
-            def __init__(self, model, threshold, learning_rate, num_epochs):
-                self.model = model
-                self.threshold = threshold
-                self.optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-                self.num_epochs = num_epochs
-
-            def forward_forward_train(self, x_pos, x_neg):
-                for epoch in range(self.num_epochs):
-                    with tf.GradientTape() as tape:
-                        g_pos = tf.reduce_mean(tf.square(self.model(x_pos)), axis=1)
-                        g_neg = tf.reduce_mean(tf.square(self.model(x_neg)), axis=1)
-
-                        loss = tf.math.log(
-                            1 + tf.exp(tf.concat([-g_pos + self.threshold, g_neg - self.threshold], axis=0))
-                        )
-                        mean_loss = tf.reduce_mean(loss)
-
-                    gradients = tape.gradient(mean_loss, self.model.trainable_weights)
-                    self.optimizer.apply_gradients(zip(gradients, self.model.trainable_weights))
-
-                    print(f"Epoch {epoch + 1}/{self.num_epochs} - Loss: {mean_loss.numpy():.4f}")
-
         # Unbatch datasets
         pos_samples = list(tfds for tfds in pos_ds.unbatch().as_numpy_iterator())
         neg_samples = list(tfds for tfds in neg_ds.unbatch().as_numpy_iterator())
@@ -74,7 +51,47 @@ implementation:
         x_pos = np.stack([x for x, _ in pos_samples]).astype(np.float32)
         x_neg = np.stack([x for x, _ in neg_samples]).astype(np.float32)
 
-        # Train model
+        class ForwardForwardTrainer:
+            def __init__(self, model, threshold, learning_rate, num_epochs):
+                self.model = model
+                self.threshold = threshold
+                self.learning_rate = learning_rate
+                self.num_epochs = num_epochs
+
+            def forward_forward_train(self, x_pos, x_neg):
+                for i, layer in enumerate(self.model.layers):
+                    # Skip layers with no trainable weights (e.g., Dropout)
+                    if not layer.trainable_weights:
+                        print(f"Skipping layer {i} - {layer.name} (no trainable weights)")
+                        continue
+
+                    print(f"\n--- Training layer {i} - {layer.name} ---")
+
+                    # Partial model up to layer i (inclusive)
+                    partial_model = tf.keras.Sequential(self.model.layers[:i+1])
+
+                    optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate)
+
+                    for epoch in range(self.num_epochs):
+                        with tf.GradientTape() as tape:
+                            # Forward pass positive and negative
+                            act_pos = partial_model(x_pos)
+                            act_neg = partial_model(x_neg)
+
+                            # Goodness
+                            g_pos = tf.reduce_mean(tf.reduce_sum(tf.square(act_pos), axis=1))
+                            g_neg = tf.reduce_mean(tf.reduce_sum(tf.square(act_neg), axis=1))
+
+                            # FF loss
+                            loss = tf.math.log(1 + tf.exp(-g_pos + self.threshold)) + tf.math.log(1 + tf.exp(g_neg - self.threshold))
+
+                        # Compute gradients only for current layer weights
+                        grads = tape.gradient(loss, layer.trainable_weights)
+                        optimizer.apply_gradients(zip(grads, layer.trainable_weights))
+
+                        print(f"Layer {i+1}/{len(self.model.layers)} Epoch {epoch+1}/{self.num_epochs} Loss: {loss.numpy():.4f}")
+
+        # Train model with FF
         trainer = ForwardForwardTrainer(
             model=model,
             threshold=args.threshold,
