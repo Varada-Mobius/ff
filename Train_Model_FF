@@ -1,4 +1,4 @@
-name: Train New FFN Model for FF 
+name: Train FFN Model for FF
 description: Compiles and trains the FFN model using the training dataset and saves the trained model.
 inputs:
   - {name: ff_model, type: Model}
@@ -20,22 +20,28 @@ implementation:
       - -c
       - |
         import argparse
+        import pickle
         import os
+        import tensorflow as tf
+        from keras.optimizers import Adam
+        from keras.models import load_model
+        import glob
+        import tarfile
+        import zipfile
         import json
+        from keras.models import model_from_json
+        import argparse
+        import pickle
+        import os
         import tensorflow as tf
         import keras
         from keras import ops
-        from keras.optimizers import Adam
         from tensorflow.compiler.tf2xla.python import xla
-        
-        parser = argparse.ArgumentParser()
-        parser.add_argument('--ff_model', type=str, required=True)
-        parser.add_argument('--train_dataset', type=str, required=True)
-        parser.add_argument('--trained_model', type=str, required=True)
-        args = parser.parse_args()
-        
-        # Define the model classes
-        @keras.saving.register_keras_serializable()
+
+        # parser = argparse.ArgumentParser()
+        # parser.add_argument('--ff_model', type=str, required=True)
+        # args = parser.parse_args()
+
         class FFDense(keras.layers.Layer):
             def __init__(self, units, init_optimizer, loss_metric, num_epochs=50,
                          use_bias=True, kernel_initializer="glorot_uniform",
@@ -44,7 +50,7 @@ implementation:
                 super().__init__(**kwargs)
                 self.dense = keras.layers.Dense(
                                                 units,
-                                                activation=None,
+                                                activation=None,  # or explicitly specify if needed
                                                 use_bias=use_bias,
                                                 kernel_initializer=kernel_initializer,
                                                 bias_initializer=bias_initializer,
@@ -76,7 +82,6 @@ implementation:
                     self.optimizer.apply_gradients(zip(grads, self.dense.trainable_weights))
                 return ops.stop_gradient(self.call(x_pos)), ops.stop_gradient(self.call(x_neg)), self.loss_metric.result()
 
-        @keras.saving.register_keras_serializable()
         class FFNetwork(keras.Model):
             def __init__(self, dims, init_layer_optimizer=lambda: keras.optimizers.Adam(0.03), **kwargs):
                 super().__init__(**kwargs)
@@ -146,30 +151,61 @@ implementation:
                     else:
                         h_pos = layer(h_pos)
                 return {"FinalLoss": self.loss_var / self.loss_count}
+
+
         
-        print(f"Loading model from {args.ff_model}")
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--ff_model', type=str, required=True)
+        parser.add_argument('--train_dataset', type=str, required=True)
+        parser.add_argument('--trained_model', type=str, required=True)
+        args = parser.parse_args()
+
+        # Load model
         
-        # Load model config and weights
-        config_path = args.ff_model + '_config.json'
-        weights_path = args.ff_model + '_weights.h5'
+        # output_files = glob.glob("/tmp/*")
+        # print("Files in /tmp:")
+        # for f in output_files:
+        #     print(f)
         
-        with open(config_path, 'r') as f:
-            model_config = json.load(f)
+        print(f"the ff_model path is {args.ff_model}")
+        # tgz_path = args.ff_model
         
-        # Recreate model
-        model = FFNetwork(model_config['dims'])
+        # zip_path = args.ff_model 
+        # with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        #     print("Files in archive:")
+        #     zip_ref.printdir() 
+        #     for name in zip_ref.namelist():
+        #         print(name)
+
+
         
-        # Build model with dummy data
-        dummy_input = tf.random.normal((1, 784))
-        _ = model(dummy_input)
         
-        # Load weights
-        model.load_weights(weights_path)
+        zip_path = args.ff_model
+        extract_path = "/tmp/ff_model_extracted"
         
-        print(f"Loaded model weights from {weights_path}")
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(extract_path)
+        
+        with open(os.path.join(extract_path, "config.json"), "r") as f:
+            model_json = f.read()
+        
+        # model = model_from_json(model_json)
+        model = FFNetwork([784, 50, 50])
+        model.build(input_shape=(None, 784))
+        model.load_weights(os.path.join(extract_path, "model.weights.h5"))
+
+        # with tarfile.open(tgz_path, "r:gz") as tar:
+        #     print("Files in archive:")
+        #     for member in tar.getmembers():
+        #         print(member.name)
+        
+        # args.ff_model += ".keras"
+        # model = load_model(args.ff_model)
+        
         # Load dataset
-        print(f"Loading train dataset from {args.train_dataset}")
+        
         train_data = tf.data.experimental.load(args.train_dataset)
+
         # Compile and train
         model.compile(
             optimizer=Adam(learning_rate=0.03),
@@ -178,24 +214,23 @@ implementation:
             metrics=[]
         )
         model.fit(train_data, epochs=2)
-        # Save the trained model
+
+
+        # # Save the trained model
+        # os.makedirs(os.path.dirname(args.trained_model), exist_ok=True)
+        # with open(args.trained_model, "wb") as f:
+        #     pickle.dump(model, f)
+
         os.makedirs(os.path.dirname(args.trained_model), exist_ok=True)
-        
-        # Save weights and config separately
-        trained_weights_path = args.trained_model + '_weights.h5'
-        trained_config_path = args.trained_model + '_config.json'
-        
-        model.save_weights(trained_weights_path)
-        with open(trained_config_path, 'w') as f:
-            json.dump(model_config, f)
-        
-        print(f"Saved trained model weights to {trained_weights_path}")
-        print(f"Saved trained model config to {trained_config_path}")
-        print(f"Saved trained model to {args.trained_model}")
+        model.save(args.trained_model + ".keras")   # args.ff_model should be a directory path
+        os.rename(args.trained_model + ".keras", args.trained_model)
     args:
       - --ff_model
+      # - /tmp/outputs/ff_model/data.keras
       - {inputPath: ff_model}
       - --train_dataset
+
       - {inputPath: train_dataset}
       - --trained_model
       - {outputPath: trained_model}
+      # - /tmp/outputs/trained_model/data.keras
