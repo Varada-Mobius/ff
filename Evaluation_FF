@@ -56,12 +56,18 @@ implementation:
                 return self.relu(res)
 
         class FFNetwork(keras.Model):
-            def __init__(self, dims, **kwargs):
+            def __init__(self, dims, init_layer_optimizer=lambda: keras.optimizers.Adam(0.03), **kwargs):
                 super().__init__(**kwargs)
+                self.init_layer_optimizer = init_layer_optimizer
+                self.loss_var = keras.Variable(0.0, trainable=False, dtype="float32")
+                self.loss_count = keras.Variable(0.0, trainable=False, dtype="float32")
                 self.layer_list = [keras.Input(shape=(dims[0],))]
+                self.metrics_built = False
                 for d in range(len(dims) - 1):
                     self.layer_list.append(
-                        FFDense(dims[d + 1])
+                        FFDense(dims[d + 1],
+                                init_optimizer=self.init_layer_optimizer,
+                                loss_metric=keras.metrics.Mean())
                     )
 
             @tf.function(reduce_retracing=True)
