@@ -31,6 +31,7 @@ implementation:
         parser.add_argument('--ff_model', type=str, required=True)
         args = parser.parse_args()
 
+        @keras.saving.register_keras_serializable()
         class FFDense(keras.layers.Layer):
             def __init__(self, units, init_optimizer, loss_metric, num_epochs=50,
                          use_bias=True, kernel_initializer="glorot_uniform",
@@ -71,6 +72,7 @@ implementation:
                     self.optimizer.apply_gradients(zip(grads, self.dense.trainable_weights))
                 return ops.stop_gradient(self.call(x_pos)), ops.stop_gradient(self.call(x_neg)), self.loss_metric.result()
 
+        @keras.saving.register_keras_serializable()
         class FFNetwork(keras.Model):
             def __init__(self, dims, init_layer_optimizer=lambda: keras.optimizers.Adam(0.03), **kwargs):
                 super().__init__(**kwargs)
