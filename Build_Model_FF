@@ -2,7 +2,7 @@ name: Build Model for FF
 description: Defines the FFNetwork model with forward-forward learning layers and saves it.
 
 outputs:
-- { name: model, type: KerasModelHdf5 }
+- { name: model, type: Model }
 
 implementation:
   container:
