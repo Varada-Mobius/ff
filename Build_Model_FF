@@ -25,6 +25,10 @@ implementation:
         from keras import ops
         from tensorflow.compiler.tf2xla.python import xla
 
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--model", dest="model_path", type=_make_parent_dirs_and_return_path, required=True)
+        args = parser.parse_args()
+        
         def _make_parent_dirs_and_return_path(file_path: str):
           os.makedirs(os.path.dirname(file_path), exist_ok=True)
           return file_path
@@ -134,17 +138,11 @@ implementation:
                 return {"FinalLoss": self.loss_var / self.loss_count}
 
 
-      import argparse
-
-      parser = argparse.ArgumentParser()
       
-      parser.add_argument("--model", dest="model_path", type=_make_parent_dirs_and_return_path, required=True)
 
-      args = parser.parse_args()
+        model = FFNetwork([784,500,500])
 
-      model = FFNetwork([784,500,500])
-
-      model.save(args.model_path)
+        model.save(args.model_path)
         
 
     args:
