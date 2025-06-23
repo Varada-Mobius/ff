@@ -1,4 +1,4 @@
-name: Build Model for FF
+name: Build Model_v5
 description: Defines the FFNetwork model with forward-forward learning layers and saves it.
 # outputs:
 #   - {name: ff_model, type: Model}
@@ -12,15 +12,15 @@ implementation:
       - sh
       - -c
       - |
-        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet tensorflow keras dill || \
-        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet tensorflow keras dill --user
+        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet tensorflow keras || \
+        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet tensorflow keras --user
         exec "$0" "$@"
       - python3
       - -u
       - -c
       - |
         import argparse
-        import dill
+        import pickle
         import os
         import tensorflow as tf
         import keras
@@ -31,7 +31,6 @@ implementation:
         parser.add_argument('--ff_model', type=str, required=True)
         args = parser.parse_args()
 
-        @keras.saving.register_keras_serializable()
         class FFDense(keras.layers.Layer):
             def __init__(self, units, init_optimizer, loss_metric, num_epochs=50,
                          use_bias=True, kernel_initializer="glorot_uniform",
@@ -72,7 +71,6 @@ implementation:
                     self.optimizer.apply_gradients(zip(grads, self.dense.trainable_weights))
                 return ops.stop_gradient(self.call(x_pos)), ops.stop_gradient(self.call(x_neg)), self.loss_metric.result()
 
-        @keras.saving.register_keras_serializable()
         class FFNetwork(keras.Model):
             def __init__(self, dims, init_layer_optimizer=lambda: keras.optimizers.Adam(0.03), **kwargs):
                 super().__init__(**kwargs)
@@ -143,42 +141,16 @@ implementation:
                         h_pos = layer(h_pos)
                 return {"FinalLoss": self.loss_var / self.loss_count}
 
-            @tf.function
-            def call(self, inputs):
-              h = inputs
-              for layer in self.layer_list[1:]:
-                h = layer(h)
-              return h  
-
         # Instantiate model
         model = FFNetwork([784, 50, 50])
 
         os.makedirs(os.path.dirname(args.ff_model), exist_ok=True)
-        
-        # Save model architecture and weights separately to avoid Keras serialization issues
-        import json
-        
-        # Save model config
-        model_config = {
-            'dims': [784, 50, 50],
-            'class_name': 'FFNetwork'
-        }
-        
-        # Build the model with dummy data to initialize weights
-        dummy_input = tf.random.normal((1, 784))
-        _ = model(dummy_input)
-        
-        # Save weights and config
-        weights_path = args.ff_model + '_weights.h5'
-        config_path = args.ff_model + '_config.json'
-        
-        model.save_weights(weights_path)
-        with open(config_path, 'w') as f:
-            json.dump(model_config, f)
-        
-        print(f"Saved model weights to {weights_path}")
-        print(f"Saved model config to {config_path}")
+        # with open(args.ff_model, "wb") as f:
+        #     pickle.dump(model, f)
+        model.save(args.ff_model + ".keras")   # args.ff_model should be a directory path
+        os.rename(args.ff_model + ".keras", args.ff_model)
 
     args:
       - --ff_model
       - {outputPath: ff_model}
+        
