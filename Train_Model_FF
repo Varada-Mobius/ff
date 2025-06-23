@@ -12,8 +12,8 @@ implementation:
       - sh
       - -c
       - |
-        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet tensorflow keras joblib || \
-        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet tensorflow keras joblib --user
+        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet tensorflow keras dill || \
+        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet tensorflow keras dill --user
         exec "$0" "$@"
       - python3
       - -u
@@ -21,7 +21,7 @@ implementation:
       - |
         import argparse
         import os
-        import joblib
+        import dill
         import tensorflow as tf
         from keras.optimizers import Adam
         parser = argparse.ArgumentParser()
@@ -30,7 +30,7 @@ implementation:
         parser.add_argument('--trained_model', type=str, required=True)
         args = parser.parse_args()
         print(f"Loading model from {args.ff_model}")
-        model = joblib.load(args.ff_model)
+        model = dill.load(open(args.ff_model, 'rb'))
         # Load dataset
         print(f"Loading train dataset from {args.train_dataset}")
         train_data = tf.data.experimental.load(args.train_dataset)
@@ -44,7 +44,8 @@ implementation:
         model.fit(train_data, epochs=2)
         # Save the trained model
         os.makedirs(os.path.dirname(args.trained_model), exist_ok=True)
-        joblib.dump(model, args.trained_model)
+        
+        dill.dump(model, open(args.trained_model, 'wb'))
         print(f"Saved trained model to {args.trained_model}")
     args:
       - --ff_model
