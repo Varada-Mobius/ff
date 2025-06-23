@@ -147,7 +147,30 @@ implementation:
         model = FFNetwork([784, 50, 50])
 
         os.makedirs(os.path.dirname(args.ff_model), exist_ok=True)
-        dill.dump(model, open(args.ff_model, 'wb'))
+        
+        # Save model architecture and weights separately to avoid Keras serialization issues
+        import json
+        
+        # Save model config
+        model_config = {
+            'dims': [784, 50, 50],
+            'class_name': 'FFNetwork'
+        }
+        
+        # Build the model with dummy data to initialize weights
+        dummy_input = tf.random.normal((1, 784))
+        _ = model(dummy_input)
+        
+        # Save weights and config
+        weights_path = args.ff_model + '_weights.h5'
+        config_path = args.ff_model + '_config.json'
+        
+        model.save_weights(weights_path)
+        with open(config_path, 'w') as f:
+            json.dump(model_config, f)
+        
+        print(f"Saved model weights to {weights_path}")
+        print(f"Saved model config to {config_path}")
 
     args:
       - --ff_model
