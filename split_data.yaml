@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 name: Overlay and Split Datasets
 description: Overlays labels on inputs and splits into positive/negative datasets with user-defined batch size.
 
@@ -18,6 +19,23 @@ outputs:
 >>>>>>> 60d32831c78040da7a039a772a4f55c08bbd1be5
   - {name: train_dataset, type: Dataset}
   - {name: test_dataset, type: Dataset}
+=======
+name: Overlay and Split Positive and Negative Datasets
+description: Overlays labels and splits the datasets into positive and negative datasets by label corruption.
+
+inputs:
+  - {name: overlaid_train_dataset, type: Dataset}
+  - {name: overlaid_test_dataset, type: Dataset}
+  - {name: batch_size, type: Integer}
+
+outputs:
+  - {name: positive_train_dataset, type: Dataset}
+  - {name: negative_train_dataset, type: Dataset}
+  - {name: positive_test_dataset, type: Dataset}
+  - {name: negative_test_dataset, type: Dataset}
+
+
+>>>>>>> 71fc28f0a52d0a9786641b4d18d11000e52c212d
 
 outputs:
   - {name: positive_train_dataset, type: Dataset}
@@ -41,12 +59,18 @@ implementation:
         import random
 
         parser = argparse.ArgumentParser()
+<<<<<<< HEAD
         parser.add_argument('--train_dataset', required=True)
         parser.add_argument('--test_dataset', required=True)
+=======
+        parser.add_argument('--overlaid_train_dataset', required=True)
+        parser.add_argument('--overlaid_test_dataset', required=True)
+>>>>>>> 71fc28f0a52d0a9786641b4d18d11000e52c212d
         parser.add_argument('--positive_train_dataset', required=True)
         parser.add_argument('--negative_train_dataset', required=True)
         parser.add_argument('--positive_test_dataset', required=True)
         parser.add_argument('--negative_test_dataset', required=True)
+<<<<<<< HEAD
         parser.add_argument('--batch_size', type=int, default=60000)
         args = parser.parse_args()
 
@@ -58,6 +82,12 @@ implementation:
             )
             X_sample = tf.tensor_scatter_nd_update(X_sample, indices=[[0]], updates=updates)
             return X_sample, y_sample
+=======
+        parser.add_argument('--batch_size', type=int, required=False, default=60000)
+        args = parser.parse_args()
+
+        batch_size = args.batch_size
+>>>>>>> 71fc28f0a52d0a9786641b4d18d11000e52c212d
 
         def re_overlay(X_sample, new_label):
             max_sample = tf.reduce_max(X_sample, axis=0, keepdims=True)
@@ -73,16 +103,25 @@ implementation:
             choices.remove(label.numpy())
             return random.choice(choices)
 
+<<<<<<< HEAD
         def process_dataset(ds, batch_size):
+=======
+        def split_dataset(ds, batch_size):
+>>>>>>> 71fc28f0a52d0a9786641b4d18d11000e52c212d
             pos_ds = []
             neg_ds = []
 
             for x, y in ds.unbatch():
+<<<<<<< HEAD
                 # Overlay positive
                 x_pos, y_pos = overlay_y_on_x(x, y)
                 pos_ds.append((x_pos, y_pos))
 
                 # Generate negative
+=======
+                pos_ds.append((x, y))
+
+>>>>>>> 71fc28f0a52d0a9786641b4d18d11000e52c212d
                 wrong_label = tf.py_function(generate_negative, [y], tf.int32)
                 x_neg, y_neg = re_overlay(x, wrong_label)
                 neg_ds.append((x_neg, y_neg))
@@ -91,6 +130,7 @@ implementation:
             neg_ds = tf.data.Dataset.from_tensor_slices(neg_ds).batch(batch_size)
             return pos_ds, neg_ds
 
+<<<<<<< HEAD
         # Load datasets
         train_ds = tf.data.experimental.load(args.train_dataset)
         test_ds = tf.data.experimental.load(args.test_dataset)
@@ -100,10 +140,19 @@ implementation:
         pos_test, neg_test = process_dataset(test_ds, args.batch_size)
 
         # Save
+=======
+        train_ds = tf.data.experimental.load(args.overlaid_train_dataset)
+        test_ds = tf.data.experimental.load(args.overlaid_test_dataset)
+
+        pos_train, neg_train = split_dataset(train_ds, args.batch_size)
+        pos_test, neg_test = split_dataset(test_ds, args.batch_size)
+
+>>>>>>> 71fc28f0a52d0a9786641b4d18d11000e52c212d
         tf.data.experimental.save(pos_train, args.positive_train_dataset)
         tf.data.experimental.save(neg_train, args.negative_train_dataset)
         tf.data.experimental.save(pos_test, args.positive_test_dataset)
         tf.data.experimental.save(neg_test, args.negative_test_dataset)
+<<<<<<< HEAD
 
         print(f"Done: batch_size={args.batch_size}")
 
@@ -122,3 +171,22 @@ implementation:
       - {outputPath: negative_test_dataset}
       - --batch_size
       - {value: 60000}  # default, can be set in GUI
+=======
+
+    args:
+      - --overlaid_train_dataset
+      - {inputPath: overlaid_train_dataset}
+      - --overlaid_test_dataset
+      - {inputPath: overlaid_test_dataset}
+      - --batch_size
+      - {inputValue: batch_size}
+      - --positive_train_dataset
+      - {outputPath: positive_train_dataset}
+      - --negative_train_dataset
+      - {outputPath: negative_train_dataset}
+      - --positive_test_dataset
+      - {outputPath: positive_test_dataset}
+      - --negative_test_dataset
+      - {outputPath: negative_test_dataset}
+      
+>>>>>>> 71fc28f0a52d0a9786641b4d18d11000e52c212d
