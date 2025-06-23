@@ -104,7 +104,7 @@ implementation:
             zip_ref.extractall(extract_path)
 
         
-        model = FFNetwork([784,50,50)]
+        model = FFNetwork([784,50,50])
         model.build(input_shape=(None, 784))
         model.load_weights(os.path.join(extract_path, "model.weights.h5"))
 
