@@ -27,6 +27,7 @@ implementation:
         from keras import ops
         import zipfile
         import json
+        from tensorflow.compiler.tf2xla.python import xla        
 
         class FFDense(keras.layers.Layer):
             def __init__(self, units, init_optimizer, loss_metric, num_epochs=50,
