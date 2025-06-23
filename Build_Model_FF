@@ -143,6 +143,13 @@ implementation:
                         h_pos = layer(h_pos)
                 return {"FinalLoss": self.loss_var / self.loss_count}
 
+            @tf.function
+            def call(self, inputs):
+              h = inputs
+              for layer in self.layer_list[1:]:
+                h = layer(h)
+              return h  
+
         # Instantiate model
         model = FFNetwork([784, 50, 50])
 
