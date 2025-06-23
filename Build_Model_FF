@@ -2,7 +2,7 @@ name: Build Model for FF
 description: Defines the FFNetwork model with forward-forward learning layers and saves it.
 
 outputs:
-- { name: model, type: Model }
+- {name: model, type: Model}
 
 implementation:
   container:
@@ -136,15 +136,15 @@ implementation:
 
       import argparse
 
-      _parser = argparse.ArgumentParser(prog='Build FF Network')
+      parser = argparse.ArgumentParser()
       
-      _parser.add_argument("--model", dest="model_path", type=_make_parent_dirs_and_return_path, required=True)
+      parser.add_argument("--model", dest="model_path", type=_make_parent_dirs_and_return_path, required=True)
 
-      _parsed_args = _parser.parse_args()
+      args = parser.parse_args()
 
       model = FFNetwork([784,500,500])
 
-      model.save(_parsed_args.model_path)
+      model.save(args.model_path)
         
 
     args:
