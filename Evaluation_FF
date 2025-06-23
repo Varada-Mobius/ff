@@ -103,29 +103,9 @@ implementation:
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall(extract_path)
 
-        # List what was extracted
-        print("Extracted model folder contains:", os.listdir(extract_path))
-
-        # Check config.json content
-        config_path = os.path.join(extract_path, "config.json")
-
-        if os.path.exists(config_path):
-          with open(config_path, "r") as f:
-            model_json = f.read()
-          print("config.json content:", model_json)
-          model_config = json.loads(model_json)
-          dims = model_config.get("dims")
-          print("Loaded dims:", dims)
-        else:
-          print("ERROR: config.json not found in model zip!")
-          dims = None
-
-        if dims is None:
-          raise ValueError("Cannot load model — dims not found in config.json!")
-
         
-        model = FFNetwork(dims)
-        model.build(input_shape=(None, dims[0]))
+        model = FFNetwork([784,50,50)]
+        model.build(input_shape=(None, 784))
         model.load_weights(os.path.join(extract_path, "model.weights.h5"))
 
         # Load test dataset
@@ -144,7 +124,7 @@ implementation:
         y_pred = tf.convert_to_tensor(y_pred)
 
         acc = tf.reduce_mean(tf.cast(tf.equal(y_true, y_pred), tf.float32)).numpy()
-
+        print("accuracy", acc)
         # Save accuracy
         os.makedirs(os.path.dirname(args.accuracy), exist_ok=True)
         with open(args.accuracy, "w") as f:
