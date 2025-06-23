@@ -1,8 +1,9 @@
 name: Build Model for FF
 description: Defines the FFNetwork model with forward-forward learning layers and saves it.
-
+# outputs:
+#   - {name: ff_model, type: Model}
 outputs:
-- {name: model, type: Model}
+  - {name: ff_model, type: Model}
 
 implementation:
   container:
@@ -11,14 +12,15 @@ implementation:
       - sh
       - -c
       - |
-        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet tensorflow keras || \
-        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet tensorflow keras --user
+        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet tensorflow keras joblib || \
+        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet tensorflow keras joblib --user
         exec "$0" "$@"
       - python3
       - -u
       - -c
       - |
         import argparse
+        import joblib
         import os
         import tensorflow as tf
         import keras
@@ -26,30 +28,24 @@ implementation:
         from tensorflow.compiler.tf2xla.python import xla
 
         parser = argparse.ArgumentParser()
-        parser.add_argument("--model", dest="model_path", type=_make_parent_dirs_and_return_path, required=True)
+        parser.add_argument('--ff_model', type=str, required=True)
         args = parser.parse_args()
-        
-        def _make_parent_dirs_and_return_path(file_path: str):
-          os.makedirs(os.path.dirname(file_path), exist_ok=True)
-          return file_path
-
-        
 
         class FFDense(keras.layers.Layer):
-            def __init__(self, units, init_optimizer, loss_metric, num_epochs=5,
+            def __init__(self, units, init_optimizer, loss_metric, num_epochs=50,
                          use_bias=True, kernel_initializer="glorot_uniform",
                          bias_initializer="zeros", kernel_regularizer=None,
                          bias_regularizer=None, **kwargs):
                 super().__init__(**kwargs)
                 self.dense = keras.layers.Dense(
-                    units,
-                    activation=None,
-                    use_bias=use_bias,
-                    kernel_initializer=kernel_initializer,
-                    bias_initializer=bias_initializer,
-                    kernel_regularizer=kernel_regularizer,
-                    bias_regularizer=bias_regularizer
-                )
+                                                units,
+                                                activation=None,  # or explicitly specify if needed
+                                                use_bias=use_bias,
+                                                kernel_initializer=kernel_initializer,
+                                                bias_initializer=bias_initializer,
+                                                kernel_regularizer=kernel_regularizer,
+                                                bias_regularizer=bias_regularizer
+                                                )
                 self.relu = keras.layers.ReLU()
                 self.optimizer = init_optimizer()
                 self.loss_metric = loss_metric
@@ -67,7 +63,8 @@ implementation:
                     with tf.GradientTape() as tape:
                         g_pos = ops.mean(ops.power(self.call(x_pos), 2), 1)
                         g_neg = ops.mean(ops.power(self.call(x_neg), 2), 1)
-                        loss = ops.log(1 + ops.exp(ops.concatenate([-g_pos + self.threshold, g_neg - self.threshold], 0)))
+                        loss = ops.log(1 + ops.exp(ops.concatenate([-g_pos + self.threshold,
+                                                                    g_neg - self.threshold], 0)))
                         mean_loss = ops.cast(ops.mean(loss), dtype="float32")
                         self.loss_metric.update_state([mean_loss])
                     grads = tape.gradient(mean_loss, self.dense.trainable_weights)
@@ -112,6 +109,13 @@ implementation:
                     goodness_per_label.append(ops.expand_dims(ops.sum(goodness, keepdims=True), 1))
                 return ops.cast(ops.argmax(tf.concat(goodness_per_label, 1), 1), dtype="float64")
 
+            def update_pierce_params(self, pierce_params):
+                self.optimiser = pierce_params.get("optimiser", keras.optimizers.Adam(learning_rate=0.03))
+                self.threshold = pierce_params.get("threshold", 1.5)
+                for layer in self.layer_list:
+                    if hasattr(layer, "optimizer"):
+                        layer.optimizer = self.optimiser
+
             def predict(self, data):
                 return ops.vectorized_map(self.predict_one_sample, data).numpy().astype(int)
 
@@ -137,14 +141,12 @@ implementation:
                         h_pos = layer(h_pos)
                 return {"FinalLoss": self.loss_var / self.loss_count}
 
+        # Instantiate model
+        model = FFNetwork([784, 50, 50])
 
-      
-
-        model = FFNetwork([784,500,500])
-
-        model.save(args.model_path)
-        
+        os.makedirs(os.path.dirname(args.ff_model), exist_ok=True)
+        joblib.dump(model, args.ff_model)
 
     args:
-      - --model
-      - {outputPath: model}
+      - --ff_model
+      - {outputPath: ff_model}
