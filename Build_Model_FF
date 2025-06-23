@@ -1,8 +1,8 @@
 name: Build Model for FF
-description: Defines the 7th FFNetwork model with forward-forward learning layers and saves it.
+description: Defines the FFNetwork model with forward-forward learning layers and saves it.
 
 outputs:
-  - {name: ff_model, type: Model}
+- { name: model, type: KerasModelHdf5 }
 
 implementation:
   container:
@@ -25,12 +25,14 @@ implementation:
         from keras import ops
         from tensorflow.compiler.tf2xla.python import xla
 
-        parser = argparse.ArgumentParser()
-        parser.add_argument('--ff_model', type=str, required=True)
-        args = parser.parse_args()
+        def _make_parent_dirs_and_return_path(file_path: str):
+          os.makedirs(os.path.dirname(file_path), exist_ok=True)
+          return file_path
+
+        
 
         class FFDense(keras.layers.Layer):
-            def __init__(self, units, init_optimizer, loss_metric, num_epochs=50,
+            def __init__(self, units, init_optimizer, loss_metric, num_epochs=5,
                          use_bias=True, kernel_initializer="glorot_uniform",
                          bias_initializer="zeros", kernel_regularizer=None,
                          bias_regularizer=None, **kwargs):
@@ -131,13 +133,20 @@ implementation:
                         h_pos = layer(h_pos)
                 return {"FinalLoss": self.loss_var / self.loss_count}
 
-        # Instantiate the model
-        model = FFNetwork([784, 500, 500])
 
-        # Save the model
-        os.makedirs(os.path.dirname(args.ff_model), exist_ok=True)
-        model.save(args.ff_model)
+      import argparse
+
+      _parser = argparse.ArgumentParser(prog='Build FF Network')
+      
+      _parser.add_argument("--model", dest="model_path", type=_make_parent_dirs_and_return_path, required=True)
+
+      _parsed_args = _parser.parse_args()
+
+      model = FFNetwork([784,500,500])
+
+      model.save(_parsed_args.model_path)
+        
 
     args:
-      - --ff_model
-      - {outputPath: ff_model}
+      - --model
+      - {outputPath: model}
