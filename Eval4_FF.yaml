@@ -75,6 +75,13 @@ implementation:
                                 loss_metric=keras.metrics.Mean())
                     )
 
+
+            def call(self, x):
+                """Forward pass through the network"""
+                h = x
+                for layer in self.layer_list[1:]:  # Skip the Input layer
+                  h = layer(h)
+                return h
             @tf.function(reduce_retracing=True)
             def overlay_y_on_x(self, data):
                 X_sample, y_sample = data
