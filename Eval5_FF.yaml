@@ -75,7 +75,7 @@ implementation:
                                 loss_metric=keras.metrics.Mean())
                     )
 
-           @tf.function(reduce_retracing=True)
+            @tf.function(reduce_retracing=True)
             def overlay_y_on_x(self, data):
                 X_sample, y_sample = data
                 max_sample = ops.cast(ops.amax(X_sample, axis=0, keepdims=True), dtype="float64")
