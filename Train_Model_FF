@@ -190,7 +190,7 @@ implementation:
             model_json = f.read()
         
         # model = model_from_json(model_json)
-        model = FFNetwork([784, 50, 50])
+        model = FFNetwork([784, 500, 500])
         model.build(input_shape=(None, 784))
         model.load_weights(os.path.join(extract_path, "model.weights.h5"))
 
@@ -213,7 +213,7 @@ implementation:
             jit_compile=False,
             metrics=[]
         )
-        model.fit(train_data, epochs=2)
+        model.fit(train_data, epochs=20)
 
 
         # # Save the trained model
