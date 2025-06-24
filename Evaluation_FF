@@ -76,8 +76,9 @@ implementation:
                 X_sample, y_sample = data
                 max_sample = ops.cast(ops.amax(X_sample, axis=0, keepdims=True), dtype="float64")
                 X_zeros = ops.zeros([10], dtype="float64")
-                X_update = tf.compiler.xla.dynamic_update_slice(X_zeros, max_sample, [y_sample])
-                X_sample = tf.compiler.xla.dynamic_update_slice(X_sample, X_update, [0])
+                prefix_10 = X_sample[:10]
+                prefix_10 = tf.tensor_scatter_nd_update(prefix_10, [[y_sample]], [max_sample[0]])
+                X_sample = tf.concat([prefix_10, X_sample[10:]], axis=0)
                 return X_sample, y_sample
 
             @tf.function(reduce_retracing=True)
