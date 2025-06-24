@@ -1,5 +1,5 @@
-name: Evaluate FFN Model for FF
-description: Loads the trained FFN model and evaluates its accuracy on the test dataset.
+name: Evaluate New 2 FFN Model for FF
+description: Loads the 2. trained FFN model and evaluates its accuracy on the test dataset.
 inputs:
   - {name: trained_model, type: Model}
   - {name: test_dataset, type: Dataset}
