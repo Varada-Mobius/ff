@@ -77,8 +77,11 @@ implementation:
                 max_sample = ops.cast(ops.amax(X_sample, axis=0, keepdims=True), dtype="float64")
                 
                 max_val = ops.amax(X_sample)
-                prefix_10 = X_sample[:10]
+                prefix_10 = ops.zeros(10, dtype=X_sample.dtype)
                 prefix_10 = tf.tensor_scatter_nd_update(prefix_10, [[y_sample]], [max_val])
+                
+                # Replace first 10 pixels with the encoded label
+                X_sample = tf.concat([prefix_10, X_sample[10:]], axis=0)
                 return X_sample, y_sample
 
             @tf.function(reduce_retracing=True)
