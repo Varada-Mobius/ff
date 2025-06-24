@@ -12,8 +12,8 @@ implementation:
       - sh
       - -c
       - |
-        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet tensorflow keras scikit-learn || \
-        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet tensorflow keras scikit-learn --user
+        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet tensorflow keras scikit-learn matplotlib numpy || \
+        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet tensorflow keras scikit-learn matplotlib numpy --user
         exec "$0" "$@"
       - python3
       - -u
