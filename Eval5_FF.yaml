@@ -140,17 +140,13 @@ implementation:
         y_test = tf.concat(y_test_list, axis=0).numpy()
         
         # Make predictions using your preferred approach
-        preds = model.predict(ops.convert_to_tensor(x_test))
-
-        if len(preds.shape) == 1:
-          # If 1D, no reshape needed
-          preds_final = preds
-        else:
-          # If 2D, apply your reshape (though it's redundant if already 2D)
-          preds_final = preds.reshape((preds.shape[0], preds.shape[1]))
+        preds = model.predict(x_test)
+        preds = tf.reshape(preds, [tf.shape(preds)[0], tf.shape(preds)[1]])       
 
         
-        results = accuracy_score(preds_final, y_test)
+
+        
+        results = accuracy_score(preds, y_test)
         print(f"Test Accuracy score : {results*100}%")
         # Save accuracy
         acc = results
