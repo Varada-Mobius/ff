@@ -120,14 +120,10 @@ implementation:
         
         model = FFNetwork([784,500,500])
         model.build(input_shape=(None, 784))
-
-        print("Before loading:")
-        print(model.layer_list[1].dense.get_weights()[0][:5, :5])
+        
         
         model.load_weights(os.path.join(extract_path, "model.weights.h5"))
         
-        print("After loading:")  
-        print(model.layer_list[1].dense.get_weights()[0][:5, :5])
         
         # Load test dataset
         test_data = tf.data.experimental.load(args.test_dataset)
