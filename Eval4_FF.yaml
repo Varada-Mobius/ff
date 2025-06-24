@@ -1,0 +1,218 @@
+name: Evaluate New 4 FFN Model for FF
+description: Loads the 4. trained FFN model and evaluates its accuracy on the test dataset.
+inputs:
+  - {name: trained_model, type: Model}
+  - {name: test_dataset, type: Dataset}
+outputs:
+  - {name: accuracy, type: Float}
+implementation:
+  container:
+    image: python:3.9
+    command:
+      - sh
+      - -c
+      - |
+        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet tensorflow keras scikit-learn matplotlib numpy || \
+        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet tensorflow keras scikit-learn matplotlib numpy --user
+        exec "$0" "$@"
+      - python3
+      - -u
+      - -c
+      - |
+        import argparse
+        import pickle
+        import os
+        import tensorflow as tf
+        import keras
+        from keras import ops
+        import zipfile
+        import json
+        from tensorflow.compiler.tf2xla.python import xla  
+        import numpy as np
+        
+        from sklearn.metrics import accuracy_score
+        import matplotlib.pyplot as plt
+
+        class FFDense(keras.layers.Layer):
+            def __init__(self, units, init_optimizer, loss_metric, num_epochs=50,
+                         use_bias=True, kernel_initializer="glorot_uniform",
+                         bias_initializer="zeros", kernel_regularizer=None,
+                         bias_regularizer=None, **kwargs):
+                super().__init__(**kwargs)
+                self.dense = keras.layers.Dense(
+                                                units,
+                                                activation=None,  # or explicitly specify if needed
+                                                use_bias=use_bias,
+                                                kernel_initializer=kernel_initializer,
+                                                bias_initializer=bias_initializer,
+                                                kernel_regularizer=kernel_regularizer,
+                                                bias_regularizer=bias_regularizer
+                                                )
+                self.relu = keras.layers.ReLU()
+                self.optimizer = init_optimizer()
+                self.loss_metric = loss_metric
+                self.threshold = 1.5
+                self.num_epochs = num_epochs
+
+            def call(self, x):
+                x_norm = ops.norm(x, ord=2, axis=1, keepdims=True) + 1e-4
+                x_dir = x / x_norm
+                res = self.dense(x_dir)
+                return self.relu(res)
+
+        class FFNetwork(keras.Model):
+            def __init__(self, dims, init_layer_optimizer=lambda: keras.optimizers.Adam(0.03), **kwargs):
+                super().__init__(**kwargs)
+                self.init_layer_optimizer = init_layer_optimizer
+                self.loss_var = keras.Variable(0.0, trainable=False, dtype="float32")
+                self.loss_count = keras.Variable(0.0, trainable=False, dtype="float32")
+                self.layer_list = [keras.Input(shape=(dims[0],))]
+                self.metrics_built = False
+                for d in range(len(dims) - 1):
+                    self.layer_list.append(
+                        FFDense(dims[d + 1],
+                                init_optimizer=self.init_layer_optimizer,
+                                loss_metric=keras.metrics.Mean())
+                    )
+
+            @tf.function(reduce_retracing=True)
+            def overlay_y_on_x(self, data):
+                X_sample, y_sample = data
+                max_sample = ops.cast(ops.amax(X_sample, axis=0, keepdims=True), dtype="float64")
+                
+                max_val = ops.amax(X_sample)
+                prefix_10 = ops.zeros(10, dtype=X_sample.dtype)
+                prefix_10 = tf.tensor_scatter_nd_update(prefix_10, [[y_sample]], [max_val])
+                
+                # Replace first 10 pixels with the encoded label
+                X_sample = tf.concat([prefix_10, X_sample[10:]], axis=0)
+                return X_sample, y_sample
+
+            @tf.function(reduce_retracing=True)
+            def predict_one_sample(self, x):
+                goodness_per_label = []
+                x = ops.reshape(x, [ops.shape(x)[0] * ops.shape(x)[1]])
+                for label in range(10):
+                    h, _ = self.overlay_y_on_x((x, label))
+                    h = ops.reshape(h, [-1, ops.shape(h)[0]])
+                    goodness = []
+                    for layer in self.layer_list[1:]:
+                        h = layer(h)
+                        goodness.append(ops.mean(ops.power(h, 2), 1))
+                    goodness_per_label.append(ops.expand_dims(ops.sum(goodness, keepdims=True), 1))
+                return ops.cast(ops.argmax(tf.concat(goodness_per_label, 1), 1), dtype="float64")
+
+            def predict(self, data):
+                return ops.vectorized_map(self.predict_one_sample, data).numpy().astype(int)
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--trained_model', type=str, required=True)
+        parser.add_argument('--test_dataset', type=str, required=True)
+        parser.add_argument('--accuracy', type=str, required=True)
+        args = parser.parse_args()
+
+        # Extract model
+        zip_path = args.trained_model
+        extract_path = "/tmp/trained_model_extracted"
+
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(extract_path)
+
+        
+        model = FFNetwork([784,500,500])
+        model.build(input_shape=(None, 784))
+
+        print("=== MODEL DEBUGGING ===")
+
+        # Check if model was created
+        print(f"Model created: {model is not None}")
+        
+        # Check layer_list
+        print(f"layer_list length: {len(model.layer_list)}")
+        print(f"layer_list contents: {model.layer_list}")
+        
+        # Check if extract path exists and has files
+        print(f"Extract path exists: {os.path.exists(extract_path)}")
+        if os.path.exists(extract_path):
+            print(f"Files in extract path: {os.listdir(extract_path)}")
+        
+        # Check if weights file exists
+        weights_path = os.path.join(extract_path, "model.weights.h5")
+        print(f"Weights file exists: {os.path.exists(weights_path)}")
+        
+        # Try to build the model properly
+        print("Building model...")
+        try:
+            dummy_input = tf.zeros((1, 784))
+            output = model(dummy_input)  # This should build all layers
+            print(f"Model built successfully, output shape: {output.shape}")
+            print(f"layer_list length after build: {len(model.layer_list)}")
+        except Exception as e:
+            print(f"Error building model: {e}")
+        
+        # Now try to load weights
+        print("Attempting to load weights...")
+        try:
+            if os.path.exists(weights_path):
+                model.load_weights(weights_path)
+                print("Weights loaded successfully")
+                
+                # Check weights after loading
+                if len(model.layer_list) > 1:
+                    for i, layer in enumerate(model.layer_list[1:], 1):
+                        try:
+                            weights = layer.get_weights()
+                            print(f"Layer {i} weights shapes: {[w.shape for w in weights]}")
+                        except Exception as e:
+                            print(f"Error getting weights for layer {i}: {e}")
+                else:
+                    print("No layers in layer_list to check weights")
+            else:
+                print("Weights file not found!")
+        except Exception as e:
+            print(f"Error loading weights: {e}")
+        
+        print("=== END DEBUGGING ===")
+        
+        model.load_weights(os.path.join(extract_path, "model.weights.h5"))
+        
+        
+        # Load test dataset
+        test_data = tf.data.experimental.load(args.test_dataset)
+
+        x_test_list = []
+        y_test_list = []
+        
+        for x_batch, y_batch in test_data:
+            x_test_list.append(x_batch)
+            y_test_list.append(y_batch)
+        
+        # Concatenate all batches
+        x_test = tf.concat(x_test_list, axis=0)
+        y_test = tf.concat(y_test_list, axis=0).numpy()
+        
+        # Make predictions using your preferred approach
+        preds = model.predict(ops.convert_to_tensor(x_test))
+
+        if len(preds.shape) == 1:
+          # If 1D, no reshape needed
+          preds_final = preds
+        else:
+          # If 2D, apply your reshape (though it's redundant if already 2D)
+          preds_final = preds.reshape((preds.shape[0], preds.shape[1]))
+
+        
+        results = accuracy_score(preds_final, y_test)
+        print(f"Test Accuracy score : {results*100}%")
+        # Save accuracy
+        acc = results
+        os.makedirs(os.path.dirname(args.accuracy), exist_ok=True)
+        with open(args.accuracy, "w") as f:
+            f.write(str(acc))
+    args:
+      - --trained_model
+      - {inputPath: trained_model}
+      - --test_dataset
+      - {inputPath: test_dataset}
+      - --accuracy
+      - {outputPath: accuracy}
