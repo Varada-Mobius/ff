@@ -12,8 +12,8 @@ implementation:
       - sh
       - -c
       - |
-        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet tensorflow keras || \
-        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet tensorflow keras --user
+        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet tensorflow keras scikit-learn || \
+        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet tensorflow keras scikit-learn --user
         exec "$0" "$@"
       - python3
       - -u
@@ -29,7 +29,7 @@ implementation:
         import json
         from tensorflow.compiler.tf2xla.python import xla  
         import numpy as np
-        import sklearn
+        
         from sklearn.metrics import accuracy_score
         import matplotlib.pyplot as plt
 
