@@ -188,15 +188,33 @@ implementation:
                         print(f"Failed to load weights: {e}")
                 
                 # Try loading saved model format
+                keras_model_path = None
+                for fname in os.listdir(extract_path):
+                    if fname.endswith(".keras"):
+                        keras_model_path = os.path.join(extract_path, fname)
+                        break
+                
+                if keras_model_path:
+                    try:
+                        model = keras.models.load_model(keras_model_path, custom_objects={
+                            'FFNetwork': FFNetwork,
+                            'FFDense': FFDense
+                        })
+                        print(f"Model loaded from .keras file: {keras_model_path}")
+                        return model
+                    except Exception as e:
+                        print(f"Failed to load .keras model: {e}")
+                
+                # Fallback: try directory SavedModel format
                 try:
                     model = keras.models.load_model(extract_path, custom_objects={
                         'FFNetwork': FFNetwork,
                         'FFDense': FFDense
                     })
-                    print("Model loaded from saved model format")
+                    print("Model loaded from SavedModel format")
                     return model
                 except Exception as e:
-                    print(f"Failed to load saved model: {e}")
+                    print(f"Failed to load saved model directory format: {e}")
                 
                 # Try loading config and weights separately
                 config_path = os.path.join(extract_path, "config.json")
