@@ -9,13 +9,16 @@ implementation:
   container:
     image: python:3.9
     command:
-      - python3
-      - -u
+      - sh
       - -c
       - |
         PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet torch torchvision || \
         PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet torch torchvision --user
-        
+        exec "$0" "$@"
+      - python3
+      - -u
+      - -c
+      - |        
         import torch
         import torch.nn as nn
         import torch.nn.functional as F
