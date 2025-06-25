@@ -1,0 +1,105 @@
+name: Build Model using Pytorch for FF
+description: Defines the FFNetwork model (pytorch) with forward-forward learning layers and saves it.
+
+outputs:
+  - {name: ff_model, type: Model}
+
+implementation:
+  container:
+    image: python:3.9
+    command:
+      - sh
+      - -c
+      - |
+        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet torch torchvision || \
+        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet torch torchvision --user
+        exec "$0" "$@"
+      - python3
+      - -u
+      - -c
+      - |
+        import argparse
+        import pickle
+        
+        import os
+        import torch
+        import torch.nn as nn
+        import torch.nn.functional as F
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--ff_model', type=str, required=True)
+        args = parser.parse_args()
+
+        class FFDense(nn.Module):
+            def __init__(self, in_features, out_features, threshold=1.5, lr=0.03, num_epochs=50):
+                super(FFDense, self).__init__()
+                self.linear = nn.Linear(in_features, out_features)
+                self.relu = nn.ReLU()
+                self.optimizer = torch.optim.Adam(self.parameters(), lr=lr)
+                self.threshold = threshold
+                self.num_epochs = num_epochs
+
+            def forward(self, x):
+                x_norm = torch.norm(x, p=2, dim=1, keepdim=True) + 1e-4
+                x_dir = x / x_norm
+                return self.relu(self.linear(x_dir))
+
+            def forward_forward(self, x_pos, x_neg):
+                for _ in range(self.num_epochs):
+                    g_pos = torch.mean(self.forward(x_pos) ** 2, dim=1)
+                    g_neg = torch.mean(self.forward(x_neg) ** 2, dim=1)
+                    loss = torch.log(1 + torch.exp(torch.cat([-g_pos + self.threshold, g_neg - self.threshold], dim=0)))
+                    loss = loss.mean()
+                    self.optimizer.zero_grad()
+                    loss.backward()
+                    self.optimizer.step()
+                with torch.no_grad():
+                    return self.forward(x_pos), self.forward(x_neg), loss.item()
+
+        class FFNetwork(nn.Module):
+            def __init__(self, dims, lr=0.03, threshold=1.5, num_epochs=50):
+                super(FFNetwork, self).__init__()
+                self.layers = nn.ModuleList([
+                    FFDense(dims[i], dims[i+1], lr=lr, threshold=threshold, num_epochs=num_epochs)
+                    for i in range(len(dims) - 1)
+                ])
+
+            def overlay_y_on_x(self, x, y):
+                max_per_sample = torch.amax(x, dim=1)
+                updates = torch.zeros((x.size(0), 10), device=x.device)
+                updates[range(x.size(0)), y] = max_per_sample
+                x[:, :10] = updates
+                return x
+
+            def predict_one_sample(self, x):
+                goodness_per_label = []
+                for label in range(10):
+                    x_overlay = self.overlay_y_on_x(x.clone(), torch.tensor([label]*x.size(0), device=x.device))
+                    h = x_overlay
+                    goodness = []
+                    for layer in self.layers:
+                        h = layer(h)
+                        goodness.append(torch.mean(h ** 2, dim=1))
+                    goodness_sum = torch.sum(torch.stack(goodness, dim=1), dim=1)
+                    goodness_per_label.append(goodness_sum.unsqueeze(1))
+                return torch.cat(goodness_per_label, dim=1).argmax(dim=1)
+
+            def train_step(self, x, y):
+                x_pos = self.overlay_y_on_x(x.clone(), y)
+                y_neg = y[torch.randperm(y.size(0))]
+                x_neg = self.overlay_y_on_x(x.clone(), y_neg)
+                h_pos, h_neg = x_pos, x_neg
+                total_loss = 0.0
+                for layer in self.layers:
+                    h_pos, h_neg, loss = layer.forward_forward(h_pos, h_neg)
+                    total_loss += loss
+                return {"FinalLoss": total_loss / len(self.layers)}
+
+        # Instantiate and save model
+        model = FFNetwork([784, 500, 500])
+        os.makedirs(os.path.dirname(args.ff_model), exist_ok=True)
+        torch.save(model.state_dict(), args.ff_model)
+
+     args:
+      - --ff_model
+      - {outputPath: ff_model}
