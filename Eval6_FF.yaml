@@ -162,50 +162,50 @@ implementation:
                 })
                 return config
         
-        def load_model_with_fallback(extract_path, dims):
-            """Try multiple methods to load the model"""
-            model = FFNetwork(dims)
-            
-            # Try to build the model first
-            try:
-                model.build(input_shape=(None, dims[0]))
-                print("Model built successfully")
-            except Exception as e:
-                print(f"Warning: Could not build model: {e}")
-            
-            # Try loading weights
-            weights_path = os.path.join(extract_path, "model.weights.h5")
-            if os.path.exists(weights_path):
+            def load_model_with_fallback(extract_path, dims):
+                """Try multiple methods to load the model"""
+                model = FFNetwork(dims)
+                
+                # Try to build the model first
                 try:
-                    model.load_weights(weights_path)
-                    print("Weights loaded successfully")
+                    model.build(input_shape=(None, dims[0]))
+                    print("Model built successfully")
+                except Exception as e:
+                    print(f"Warning: Could not build model: {e}")
+                
+                # Try loading weights
+                weights_path = os.path.join(extract_path, "model.weights.h5")
+                if os.path.exists(weights_path):
+                    try:
+                        model.load_weights(weights_path)
+                        print("Weights loaded successfully")
+                        return model
+                    except Exception as e:
+                        print(f"Failed to load weights: {e}")
+                
+                # Try loading saved model format
+                try:
+                    model = keras.models.load_model(extract_path, custom_objects={
+                        'FFNetwork': FFNetwork,
+                        'FFDense': FFDense
+                    })
+                    print("Model loaded from saved model format")
                     return model
                 except Exception as e:
-                    print(f"Failed to load weights: {e}")
-            
-            # Try loading saved model format
-            try:
-                model = keras.models.load_model(extract_path, custom_objects={
-                    'FFNetwork': FFNetwork,
-                    'FFDense': FFDense
-                })
-                print("Model loaded from saved model format")
+                    print(f"Failed to load saved model: {e}")
+                
+                # Try loading config and weights separately
+                config_path = os.path.join(extract_path, "config.json")
+                if os.path.exists(config_path):
+                    try:
+                        with open(config_path, 'r') as f:
+                            config = json.load(f)
+                        print(f"Loaded config: {config}")
+                        # Reconstruct model based on config if needed
+                    except Exception as e:
+                        print(f"Failed to load config: {e}")
+                
                 return model
-            except Exception as e:
-                print(f"Failed to load saved model: {e}")
-            
-            # Try loading config and weights separately
-            config_path = os.path.join(extract_path, "config.json")
-            if os.path.exists(config_path):
-                try:
-                    with open(config_path, 'r') as f:
-                        config = json.load(f)
-                    print(f"Loaded config: {config}")
-                    # Reconstruct model based on config if needed
-                except Exception as e:
-                    print(f"Failed to load config: {e}")
-            
-            return model
         
         # Main execution
         parser = argparse.ArgumentParser()
