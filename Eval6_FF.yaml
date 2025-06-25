@@ -117,8 +117,7 @@ implementation:
             @tf.function(reduce_retracing=True)
             def overlay_y_on_x(self, data):
                 X_sample, y_sample = data
-                # Ensure X_sample is float64
-                X_sample = ops.cast(X_sample, dtype="float64")
+               
                 max_sample = ops.cast(ops.amax(X_sample, axis=0, keepdims=True), dtype="float64")
                 X_zeros = ops.zeros([10], dtype="float64")
                 X_update = xla.dynamic_update_slice(X_zeros, max_sample, [y_sample])
@@ -242,6 +241,12 @@ implementation:
                 print(f"Layer {i+1} kernel mean: {tf.reduce_mean(layer.dense.kernel).numpy():.6f}")
             else:
                 print(f"Layer {i+1} has no kernel (not built)")
+
+
+        print("=== EVALUATION WEIGHTS (first 10) ===")
+        first_layer = model.ff_layers[0]  # First FFDense layer
+        first_10_weights = first_layer.dense.kernel.numpy().flatten()[:10]
+        print(f"First 10 weights after loading: {first_10_weights}")
         
         print("=== LOADING TEST DATA ===")
         
