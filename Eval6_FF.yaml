@@ -162,7 +162,7 @@ implementation:
                 })
                 return config
         
-            def load_model_with_fallback(extract_path, dims):
+        def load_model_with_fallback(extract_path, dims):
                 #Try multiple methods to load the model
                 model = FFNetwork(dims)
                 
@@ -205,7 +205,7 @@ implementation:
                     except Exception as e:
                         print(f"Failed to load config: {e}")
                 
-                return model
+                return model    
         
         # Main execution
         parser = argparse.ArgumentParser()
