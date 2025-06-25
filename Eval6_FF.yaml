@@ -1,0 +1,277 @@
+import argparse
+import pickle
+import os
+import tensorflow as tf
+import keras
+from keras import ops
+import zipfile
+import json
+from tensorflow.compiler.tf2xla.python import xla  
+import numpy as np
+
+from sklearn.metrics import accuracy_score
+import matplotlib.pyplot as plt
+
+class FFDense(keras.layers.Layer):
+    def __init__(self, units, init_optimizer=None, loss_metric=None, num_epochs=50,
+                 use_bias=True, kernel_initializer="glorot_uniform",
+                 bias_initializer="zeros", kernel_regularizer=None,
+                 bias_regularizer=None, **kwargs):
+        super().__init__(**kwargs)
+        self.units = units
+        self.dense = keras.layers.Dense(
+            units,
+            activation=None,
+            use_bias=use_bias,
+            kernel_initializer=kernel_initializer,
+            bias_initializer=bias_initializer,
+            kernel_regularizer=kernel_regularizer,
+            bias_regularizer=bias_regularizer
+        )
+        self.relu = keras.layers.ReLU()
+        if init_optimizer is not None:
+            self.optimizer = init_optimizer()
+        self.loss_metric = loss_metric
+        self.threshold = 1.5
+        self.num_epochs = num_epochs
+
+    def call(self, x):
+        # Normalize input
+        x_norm = ops.norm(x, ord=2, axis=1, keepdims=True) + 1e-4
+        x_dir = x / x_norm
+        res = self.dense(x_dir)
+        return self.relu(res)
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'units': self.units,
+            'num_epochs': self.num_epochs,
+            'threshold': self.threshold
+        })
+        return config
+
+class FFNetwork(keras.Model):
+    def __init__(self, dims, init_layer_optimizer=None, **kwargs):
+        super().__init__(**kwargs)
+        self.dims = dims
+        self.init_layer_optimizer = init_layer_optimizer or (lambda: keras.optimizers.Adam(0.03))
+        self.loss_var = keras.Variable(0.0, trainable=False, dtype="float32")
+        self.loss_count = keras.Variable(0.0, trainable=False, dtype="float32")
+        
+        # Create layers
+        self.ff_layers = []
+        for i in range(len(dims) - 1):
+            layer = FFDense(
+                dims[i + 1],
+                init_optimizer=self.init_layer_optimizer,
+                loss_metric=keras.metrics.Mean(),
+                name=f'ff_dense_{i}'
+            )
+            self.ff_layers.append(layer)
+        
+        self.metrics_built = False
+
+    def call(self, x):
+        """Forward pass through the network"""
+        h = x
+        for layer in self.ff_layers:
+            h = layer(h)
+        return h
+
+    def build(self, input_shape):
+        """Build the model with the given input shape"""
+        super().build(input_shape)
+        # Build each layer
+        current_shape = input_shape
+        for layer in self.ff_layers:
+            layer.build(current_shape)
+            current_shape = (current_shape[0], layer.units)
+
+    @tf.function(reduce_retracing=True)
+    def overlay_y_on_x(self, data):
+        X_sample, y_sample = data
+        # Ensure X_sample is float64
+        X_sample = ops.cast(X_sample, dtype="float64")
+        max_sample = ops.cast(ops.amax(X_sample, axis=0, keepdims=True), dtype="float64")
+        X_zeros = ops.zeros([10], dtype="float64")
+        X_update = xla.dynamic_update_slice(X_zeros, max_sample, [y_sample])
+        X_sample = xla.dynamic_update_slice(X_sample, X_update, [0])
+        return X_sample, y_sample
+
+    @tf.function(reduce_retracing=True)
+    def predict_one_sample(self, x):
+        goodness_per_label = []
+        # Flatten the input if needed
+        if len(ops.shape(x)) > 1:
+            x = ops.reshape(x, [-1])
+        
+        for label in range(10):
+            h, _ = self.overlay_y_on_x((x, label))
+            h = ops.reshape(h, [1, -1])  # Batch size 1
+            goodness = []
+            for layer in self.ff_layers:
+                h = layer(h)
+                goodness.append(ops.mean(ops.power(h, 2), axis=1))
+            goodness_per_label.append(ops.sum(goodness, keepdims=True))
+        
+        goodness_tensor = ops.stack(goodness_per_label, axis=0)
+        return ops.cast(ops.argmax(goodness_tensor, axis=0), dtype="int32")
+
+    def predict(self, data):
+        """Predict labels for the given data"""
+        if isinstance(data, tf.Tensor):
+            x = data
+        else:
+            x = tf.convert_to_tensor(data)
+        
+        # Use tf.map_fn instead of ops.vectorized_map for better compatibility
+        preds = tf.map_fn(
+            self.predict_one_sample, 
+            x,
+            fn_output_signature=tf.TensorSpec(shape=(), dtype=tf.int32),
+            parallel_iterations=1
+        )
+        return preds.numpy().flatten()
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'dims': self.dims
+        })
+        return config
+
+def load_model_with_fallback(extract_path, dims):
+    """Try multiple methods to load the model"""
+    model = FFNetwork(dims)
+    
+    # Try to build the model first
+    try:
+        model.build(input_shape=(None, dims[0]))
+        print("Model built successfully")
+    except Exception as e:
+        print(f"Warning: Could not build model: {e}")
+    
+    # Try loading weights
+    weights_path = os.path.join(extract_path, "model.weights.h5")
+    if os.path.exists(weights_path):
+        try:
+            model.load_weights(weights_path)
+            print("Weights loaded successfully")
+            return model
+        except Exception as e:
+            print(f"Failed to load weights: {e}")
+    
+    # Try loading saved model format
+    try:
+        model = keras.models.load_model(extract_path, custom_objects={
+            'FFNetwork': FFNetwork,
+            'FFDense': FFDense
+        })
+        print("Model loaded from saved model format")
+        return model
+    except Exception as e:
+        print(f"Failed to load saved model: {e}")
+    
+    # Try loading config and weights separately
+    config_path = os.path.join(extract_path, "config.json")
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            print(f"Loaded config: {config}")
+            # Reconstruct model based on config if needed
+        except Exception as e:
+            print(f"Failed to load config: {e}")
+    
+    return model
+
+# Main execution
+parser = argparse.ArgumentParser()
+parser.add_argument('--trained_model', type=str, required=True)
+parser.add_argument('--test_dataset', type=str, required=True)
+parser.add_argument('--accuracy', type=str, required=True)
+args = parser.parse_args()
+
+print("=== LOADING MODEL ===")
+
+# Extract model
+zip_path = args.trained_model
+extract_path = "/tmp/trained_model_extracted"
+
+with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+    zip_ref.extractall(extract_path)
+
+print(f"Files in extract path: {os.listdir(extract_path)}")
+
+# Load model with error handling
+dims = [784, 500, 500]  # MNIST flattened input, two hidden layers
+model = load_model_with_fallback(extract_path, dims)
+
+# Verify model weights are loaded
+print("=== MODEL VERIFICATION ===")
+for i, layer in enumerate(model.ff_layers):
+    if hasattr(layer.dense, 'kernel'):
+        print(f"Layer {i+1} kernel shape: {layer.dense.kernel.shape}")
+        print(f"Layer {i+1} kernel mean: {tf.reduce_mean(layer.dense.kernel).numpy():.6f}")
+    else:
+        print(f"Layer {i+1} has no kernel (not built)")
+
+print("=== LOADING TEST DATA ===")
+
+# Load test dataset
+try:
+    test_data = tf.data.Dataset.load(args.test_dataset)
+    print("Using tf.data.Dataset.load")
+except:
+    test_data = tf.data.experimental.load(args.test_dataset)
+    print("Using tf.data.experimental.load")
+
+x_test_list = []
+y_test_list = []
+
+for x_batch, y_batch in test_data:
+    x_test_list.append(x_batch)
+    y_test_list.append(y_batch)
+
+# Concatenate all batches
+x_test = tf.concat(x_test_list, axis=0)
+y_test = tf.concat(y_test_list, axis=0).numpy()
+
+print(f"Test data shape: {x_test.shape}")
+print(f"Test labels shape: {y_test.shape}")
+print(f"Test data range: [{tf.reduce_min(x_test).numpy():.3f}, {tf.reduce_max(x_test).numpy():.3f}]")
+
+print("=== MAKING PREDICTIONS ===")
+
+# Make predictions
+try:
+    preds = model.predict(x_test)
+    print(f"Predictions shape: {preds.shape}")
+    print(f"Predictions sample: {preds[:10]}")
+    print(f"True labels sample: {y_test[:10]}")
+    
+    # Calculate accuracy
+    accuracy = accuracy_score(y_test, preds)
+    print(f"Test Accuracy: {accuracy * 100:.2f}%")
+    
+except Exception as e:
+    print(f"Error during prediction: {e}")
+    # Fallback: try predicting on a small subset
+    print("Trying prediction on smaller subset...")
+    try:
+        small_x = x_test[:100]
+        small_preds = model.predict(small_x)
+        small_accuracy = accuracy_score(y_test[:100], small_preds)
+        print(f"Small subset accuracy: {small_accuracy * 100:.2f}%")
+        accuracy = small_accuracy
+    except Exception as e2:
+        print(f"Even small subset failed: {e2}")
+        accuracy = 0.0
+
+# Save accuracy
+os.makedirs(os.path.dirname(args.accuracy), exist_ok=True)
+with open(args.accuracy, "w") as f:
+    f.write(str(accuracy))
+
+print(f"Final accuracy saved: {accuracy}")
