@@ -94,14 +94,14 @@ implementation:
                 self.metrics_built = False
         
             def call(self, x):
-                """Forward pass through the network"""
+                #Forward pass through the network
                 h = x
                 for layer in self.ff_layers:
                     h = layer(h)
                 return h
         
             def build(self, input_shape):
-                """Build the model with the given input shape"""
+                #Build the model with the given input shape
                 super().build(input_shape)
                 # Build each layer
                 current_shape = input_shape
@@ -140,7 +140,7 @@ implementation:
                 return ops.cast(ops.argmax(goodness_tensor, axis=0), dtype="int32")
         
             def predict(self, data):
-                """Predict labels for the given data"""
+                #Predict labels for the given data
                 if isinstance(data, tf.Tensor):
                     x = data
                 else:
@@ -163,7 +163,7 @@ implementation:
                 return config
         
             def load_model_with_fallback(extract_path, dims):
-                """Try multiple methods to load the model"""
+                #Try multiple methods to load the model
                 model = FFNetwork(dims)
                 
                 # Try to build the model first
