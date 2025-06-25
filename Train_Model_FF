@@ -204,7 +204,14 @@ implementation:
         
         # Load dataset
         
-        train_data = tf.data.experimental.load(args.train_dataset)
+        try:
+            train_data = tf.data.Dataset.load(args.train_dataset)
+            print("Using tf.data.Dataset.load")
+        except:
+            train_data = tf.data.experimental.load(args.train_dataset)
+            print("Using tf.data.experimental.load")
+
+
 
         # Compile and train
         model.compile(
@@ -214,6 +221,11 @@ implementation:
             metrics=[]
         )
         model.fit(train_data, epochs=4)
+
+        print("=== TRAINING WEIGHTS (first 10) ===")
+        first_layer = model.layer_list[1]  # First FFDense layer (skip Input)
+        first_10_weights = first_layer.dense.kernel.numpy().flatten()[:10]
+        print(f"First 10 weights after training: {first_10_weights}")
 
 
         # # Save the trained model
