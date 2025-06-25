@@ -42,15 +42,15 @@ implementation:
                 return self.relu(self.linear(x_dir))
 
             def forward_forward(self, x_pos, x_neg):
-                for _ in range(self.epochs):
-                    g_pos = torch.mean(self.forward(x_pos)**2, dim=1)
-                    g_neg = torch.mean(self.forward(x_neg)**2, dim=1)
-                    loss = torch.log(1 + torch.exp(torch.cat([-g_pos + self.threshold, g_neg - self.threshold])))
-                    loss = loss.mean()
-                    self.optimizer.zero_grad()
-                    loss.backward()
-                    self.optimizer.step()
+                g_pos = torch.mean(self.forward(x_pos)**2, dim=1)
+                g_neg = torch.mean(self.forward(x_neg)**2, dim=1)
+                loss = torch.log(1 + torch.exp(torch.cat([-g_pos + self.threshold, g_neg - self.threshold])))
+                loss = loss.mean()
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()                         
                 return self.forward(x_pos).detach(), self.forward(x_neg).detach(), loss.item()
+
 
         class FFNetwork(nn.Module):
             def __init__(self, dims, threshold=1.5, lr=0.03, epochs=50):
@@ -104,7 +104,8 @@ implementation:
             for x_batch, y_batch in dataloader:
                 loss = model.forward_forward_pass(x_batch, y_batch)
                 total_loss += loss
-            print(f"Epoch {epoch + 1} - Loss: {total_loss:.4f}")
+            avg_loss = total_loss / len(dataloader)
+            print(f"Epoch {epoch + 1} - Avg Loss: {avg_loss:.4f}")
 
         # Save trained model
         os.makedirs(os.path.dirname(args.trained_model), exist_ok=True)
