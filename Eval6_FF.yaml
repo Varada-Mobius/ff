@@ -55,7 +55,12 @@ implementation:
                 self.loss_metric = loss_metric
                 self.threshold = 1.5
                 self.num_epochs = num_epochs
-        
+
+            def build(self, input_shape):
+                super().build(input_shape)
+                # Build the dense layer with the input shape
+                self.dense.build(input_shape)
+            
             def call(self, x):
                 # Normalize input
                 x_norm = ops.norm(x, ord=2, axis=1, keepdims=True) + 1e-4
@@ -134,7 +139,7 @@ implementation:
                     for layer in self.ff_layers:
                         h = layer(h)
                         goodness.append(ops.mean(ops.power(h, 2), axis=1))
-                    goodness_per_label.append(ops.sum(goodness, keepdims=True))
+                    goodness_per_label.append(ops.sum(goodness))
                 
                 goodness_tensor = ops.stack(goodness_per_label, axis=0)
                 return ops.cast(ops.argmax(goodness_tensor, axis=0), dtype="int32")
@@ -260,6 +265,8 @@ implementation:
         y_test = tf.concat(y_test_list, axis=0).numpy()
         
         print(f"Test data shape: {x_test.shape}")
+        x_test = tf.reshape(x_test, (x_test.shape[0], -1))  # Flatten 28x28 to 784
+        print(f"Reshaped test data: {x_test.shape}")
         print(f"Test labels shape: {y_test.shape}")
         print(f"Test data range: [{tf.reduce_min(x_test).numpy():.3f}, {tf.reduce_max(x_test).numpy():.3f}]")
         
