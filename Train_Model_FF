@@ -220,7 +220,7 @@ implementation:
             jit_compile=False,
             metrics=[]
         )
-        model.fit(train_data, epochs=4)
+        model.fit(train_data, epochs=20)
 
         print("=== TRAINING WEIGHTS (first 10) ===")
         first_layer = model.layer_list[1]  # First FFDense layer (skip Input)
