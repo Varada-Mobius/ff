@@ -1,0 +1,110 @@
+name: Evaluate Pytorch Model for FF
+description: Loads the trained (pytorch) FFN model and evaluates its accuracy on the test dataset.
+inputs:
+  - {name: trained_model, type: Model}
+  - {name: test_dataset, type: Dataset}
+outputs:
+  - {name: accuracy, type: Float}
+implementation:
+  container:
+    image: python:3.9
+    command:
+      - sh
+      - -c
+      - |
+        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet torch torchvision scikit-learn numpy || \
+        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet torch torchvision scikit-learn numpy --user
+        exec "$0" "$@"
+      - python3
+      - -u
+      - -c
+      - |
+        import argparse
+        import pickle
+        import os
+        import torch
+        import torch.nn.functional as F
+        import numpy as np
+        from sklearn.metrics import accuracy_score
+        import matplotlib.pyplot as plt
+
+        class FFDense(nn.Module):
+            def __init__(self, in_features, out_features, threshold=1.5):
+                super().__init__()
+                self.linear = nn.Linear(in_features, out_features)
+                self.relu = nn.ReLU()
+                self.threshold = threshold
+
+            def forward(self, x):
+                x_norm = torch.norm(x, dim=1, keepdim=True) + 1e-4
+                x_dir = x / x_norm
+                return self.relu(self.linear(x_dir))       
+
+        class FFNetwork(nn.Module):
+            def __init__(self, dims, threshold=1.5):
+                super().__init__()
+                self.layers = nn.ModuleList([
+                    FFDense(dims[i], dims[i+1], threshold=threshold)
+                    for i in range(len(dims) - 1)
+                ])
+
+            def overlay_y_on_x(self, x, y):
+                max_vals = x.max(dim=1, keepdim=True).values
+                updates = torch.zeros_like(x)
+                updates[range(len(y)), y] = max_vals.squeeze()
+                return x + updates
+
+            def predict(self, x):
+                preds = []
+                for sample in x:
+                    sample = sample.unsqueeze(0)  # [1, 784]
+                    goodness_per_label = []
+                    for label in range(10):
+                        x_overlay = self.overlay_y_on_x(sample.clone(), torch.tensor([label]))
+                        h = x_overlay
+                        goodness = []
+                        for layer in self.layers:
+                            h = layer(h)
+                            goodness.append((h ** 2).mean())
+                        total_goodness = sum(goodness)
+                        goodness_per_label.append(total_goodness.item())
+                    pred_label = int(np.argmax(goodness_per_label))
+                    preds.append(pred_label)
+                return preds
+
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--trained_model', type=str, required=True)
+        parser.add_argument('--test_dataset', type=str, required=True)
+        parser.add_argument('--accuracy', type=str, required=True)
+        args = parser.parse_args()
+
+                
+        model = FFNetwork([784,500,500])
+        model.load_state_dict(torch.load(args.trained_model, map_location=torch.device('cpu')))
+        model.eval()
+        
+        with open(args.test_dataset, 'rb') as f:
+            x_test, y_test = pickle.load(f)
+        x_test = torch.tensor(x_test, dtype=torch.float32)
+        y_test = torch.tensor(y_test, dtype=torch.long)
+        
+        with torch.no_grad():
+            preds = model.predict(x_test)
+
+        acc = accuracy_score(y_test.numpy(), preds)
+        print(f"Test Accuracy score: {acc * 100:.2f}%")
+        
+        # Save accuracy
+        os.makedirs(os.path.dirname(args.accuracy), exist_ok=True)
+        with open(args.accuracy, "w") as f:
+            f.write(str(acc))
+        
+        
+    args:
+      - --trained_model
+      - {inputPath: trained_model}
+      - --test_dataset
+      - {inputPath: test_dataset}
+      - --accuracy
+      - {outputPath: accuracy}
