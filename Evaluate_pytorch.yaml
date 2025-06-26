@@ -23,7 +23,8 @@ implementation:
         import pickle
         import os
         import torch
-        import torch.nn.functional as nn
+        import torch.nn as nn
+        import torch.nn.functional as F
         import numpy as np
         from sklearn.metrics import accuracy_score
         
