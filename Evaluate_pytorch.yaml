@@ -26,7 +26,7 @@ implementation:
         import torch.nn.functional as F
         import numpy as np
         from sklearn.metrics import accuracy_score
-        import matplotlib.pyplot as plt
+        
 
         class FFDense(nn.Module):
             def __init__(self, in_features, out_features, threshold=1.5):
