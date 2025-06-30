@@ -96,7 +96,7 @@ implementation:
         y_train = torch.tensor(y_train, dtype=torch.long)
 
         dataset = torch.utils.data.TensorDataset(x_train, y_train)
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=128, shuffle=True)
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=50000, shuffle=True)
 
         model.train()
         for epoch in range(5):
